@@ -1,0 +1,3 @@
+Another app is currently holding the yum lock; waiting for it to exit…
+
+此时使用rm -rf /var/run/yum.pid即可
