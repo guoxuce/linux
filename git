@@ -41,7 +41,9 @@
 十、删除文件
   git rm test.txt
   工作区删除后，使用该命令删除暂存区的文件
-
+十一、远程仓库github
+  使用ssh进行通信，创建秘钥对
+  ssh-keygen -t rsa -C "youremail@example.com"
 
     
 
