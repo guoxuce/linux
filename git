@@ -64,12 +64,37 @@
   Git分支十分强大，在团队开发中应该充分应用。
   合并分支时，加上--no-ff参数就可以用普通模式合并，合并后的历史有分支，能看出来曾经做过合并，
   而fast forward合并就看不出来曾经做过合并。
-  
-  
-  
-  
-  
-  
+  修复bug时，我们会通过创建新的bug分支进行修复，然后合并，最后删除；
+  当手头工作没有完成时，先把工作现场git stash一下，然后去修复bug，修复后，再git stash pop，回到工作现场。
+  开发一个新feature，最好新建一个分支；
+  如果要丢弃一个没有被合并过的分支，可以通过git branch -D <name>强行删除。
+十三、远程拉取
+  查看远程库信息，使用git remote -v；
+  本地新建的分支如果不推送到远程，对其他人就是不可见的；
+  从本地推送分支，使用git push origin branch-name，如果推送失败，先用git pull抓取远程的新提交；
+  在本地创建和远程分支对应的分支，使用git checkout -b branch-name origin/branch-name，本地和远程分支的名称最好一致；
+  建立本地分支和远程分支的关联，使用git branch --set-upstream-to=origin/<branch> master；
+  从远程抓取分支，使用git pull，如果有冲突，要先处理冲突。
+十四、标签
+  更方便更容易记录的标记而已
+  命令git tag <name>用于新建一个标签，默认为HEAD，也可以指定一个commit id；
+  git tag -a <tagname> -m "blablabla..."可以指定标签信息；
+  git tag -s <tagname> -m "blablabla..."可以用PGP签名标签；
+  命令git tag可以查看所有标签。
+  git show <tagname> 查看相关标签信息
+  命令git push origin <tagname>可以推送一个本地标签；
+  命令git push origin --tags可以推送全部未推送过的本地标签；
+  命令git tag -d <tagname>可以删除一个本地标签；
+  命令git push origin :refs/tags/<tagname>可以删除一个远程标签。
+十五、忽略文件
+  忽略某些文件时，需要编写.gitignore；
+  .gitignore文件本身要放到版本库里，并且可以对.gitignore做版本管理！
+十六、git服务器
+  搭建Git服务器非常简单，通常10分钟即可完成；
+  要方便管理公钥，用Gitosis；
+  要像SVN那样变态地控制权限，用Gitolite。
+
+
   
   
   
@@ -108,3 +133,19 @@ HEAD指向的版本就是当前版本，因此，Git允许我们在版本的历�
 要克隆一个仓库，首先必须知道仓库的地址，然后使用git clone命令克隆。
 
 Git支持多种协议，包括https，但通过ssh支持的原生git协议速度最快。
+
+多人协作
+  多人协作的工作模式通常是这样：
+  首先，可以试图用git push origin branch-name推送自己的修改；
+  如果推送失败，则因为远程分支比你的本地更新，需要先用git pull试图合并；
+  如果合并有冲突，则解决冲突，并在本地提交；
+  没有冲突或者解决掉冲突后，再用git push origin branch-name推送就能成功！
+  如果git pull提示“no tracking information”，则说明本地分支和远程分支的链接关系没有创建，用命令git branch --set-upstream branch-name origin/branch-name。
+  
+在GitHub上，可以任意Fork开源仓库；
+
+自己拥有Fork后的仓库的读写权限；
+
+可以推送pull request给官方仓库来贡献代码。
+
+git可进行配置
