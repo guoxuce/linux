@@ -1,0 +1,75 @@
+1.安装yum install -y vsftpd
+2.直接可以使用系统用户登录，
+  登录之后可以进入任何目录（root家目录进不去），不安全
+3.修改配置文件，进行限制
+  vim /etc/vsftpd/vsftpd.conf
+ 将下面的配置打开，可以打开一个用户，也可以是一组用户 
+#chroot_local_user=YES
+#chroot_list_enable=YES
+# (default follows)
+#chroot_list_file=/etc/vsftpd/chroot_list
+
+4.虚拟用户映射
+添加系统用户（作为虚拟用户映射的用户）
+useradd virftp -s /sbin/nologin
+
+添加ftp用户，写入文件
+vim /etc/vsftpd/vsftpd_login
+内容如下：
+test1  ---用户名
+123  ----密码
+test2
+321
+
+使用ftp用户文件创建ftp用户库文件
+ db_load -T -t hash -f /etc/vsftpd/vsftpd_login /etc/vsftpd/vsftpd_login.db
+
+虚拟用户存放用户文件的目录
+mkdir /etc/vsftpd/vsftpd_user_conf
+在其下创建与虚拟用户同名的文件test1
+配置内容（与vsftpd.conf内容一样）：
+local_root=/home/virftp/test1 --限定家目录
+anonymous_enable=NO  ---匿名用户是否可用
+write_enable=YES  ----是否可写
+local_umask=022
+anon_upload_enable=NO  ---匿名用户是否可上传
+anon_mkdir_write_enable=NO  ---匿名用户是否可创建文件夹
+idle_session_timeout=600
+data_connection_timeout=120
+max_clients=10
+max_per_ip=5
+local_max_rate=50000
+
+根据上述配置文件，创建虚拟用户家目录
+mkdir /home/virftp/test1
+修改属主属组为映射的系统用户；
+chown -R virftp:virftp /home/virftp/test1
+
+修改ftp认证文件（原本使用系统用户认证，修改为虚拟用户认证）
+vim /etc/pam.d/vsftpd
+添加：
+auth sufficient /lib/security/pam_userdb.so db=/etc/vsftpd/vsftpd_login
+account sufficient /lib/security/pam_userdb.so db=/etc/vsftpd/vsftpd_login
+（检查/lib/security/pam_userdb.so文件是否存在，如果是64位系统，文件为/lib64/security/pam_userdb.so）
+
+修改配置文件vim /etc/vsftpd/vsftpd.conf
+guest_enable=YES
+guest_username=virftp
+virtual_use_local_privs=YES
+user_config_dir=/etc/vsftpd/vsftp_user_conf
+（local_enable=YES）
+
+重启服务/etc/init.d/vsftpd restart
+
+
+
+注意：
+1. lftp xuce@192.168.1.104
+Password:
+lftp xuce@192.168.1.104:~> ls
+ls: Login failed: 530 Login incorrect.
+
+输入的密码错误
+
+
+
