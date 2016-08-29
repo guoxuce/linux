@@ -1,0 +1,46 @@
+HA高可用集群 high available
+两台服务器，一主一从，心跳线连接
+heartbeat开源软件实现
+
+1.安装
+安装epel扩展源
+centos6
+32位epel yum源下载地址： www.lishiming.net/data/attachment/forum/epel-release-6-8_32.noarch.rpm 
+64位下载地址： www.lishiming.net/data/attachment/forum/epel-release-6-8_64.noarch.rpm 
+
+安装heartbeat
+yum install -y heartbeat
+安装依赖：
+yum install -y libnet
+
+[root@guoxuce ~]# cd /usr/share/doc/heartbeat-3.0.4/
+[root@guoxuce heartbeat-3.0.4]# ls
+apphbd.cf  AUTHORS    COPYING       ha.cf        README
+authkeys   ChangeLog  COPYING.LGPL  haresources
+[root@guoxuce heartbeat-3.0.4]# cp authkeys  ha.cf haresources  /etc/ha.d/
+
+[root@guoxuce ha.d]# vim authkeys
+auth 3
+3 md5 Hello!
+[root@guoxuce ha.d]# chmod 600 authkeys
+
+ vim haresources
+ master  192.168.1.105/24/eth0:0  nginx
+
+vim ha.cf
+debugfile /var/log/ha-debug  --排障log
+logfile /var/log/ha-log
+logfacility     local0
+keepalive 2  --探测2s
+deadtime 30  --30s 死掉
+warntime 10  --10s 警告 写入logfile
+initdead 60  
+udpport 694   --心跳线端口
+ucast eth0 192.168.1.105  --对方ip
+auto_failback on  --主复活后主动切换回去
+node    ken3
+node    kathy
+ping 192.168.1.105  --仲裁者
+respawn hacluster /usr/lib/heartbeat/ipfail --检测网络连通性
+
+
