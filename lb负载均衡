@@ -1,0 +1,11 @@
+load balance 
+nginx 7 应用层  lvs 4 网络层  keepalived F5 Netscale
+
+
+请求--》调度器（director）--》真实服务器(real server)
+
+
+lvs --> NAT/TUN/DR（三种工作方式八种调度算法）
+nat：
+相当于加了一个iptables规则，转发数据包
+
