@@ -1,0 +1,12 @@
+参考地址http://blog.csdn.net/wwwyuanliang10000/article/details/19006409
+
+在克隆几台虚拟机，发现启动后不能配置IP地址等信息，使用linux命令: “ifup eth0”也不能激活网卡，
+而在使用"service network restart",出现错误： Error:No suitable device found: no device found for connection "System eth0"
+
+解决方法：
+
+1、删除/etc/udev/rules.d/70-persistent-net.rules文件，重启系统。
+
+2、如果上面的不起作用
+    (1), ifconfig  -a查看物理MAC HWADDR的值
+    (2),vim 编辑文件 /etc/sysconfig/network-script/ifcfg-eth0中修改ifconfig中查出的MAC HWADDR值；
