@@ -27,20 +27,26 @@ auth 3
  vim haresources
  master  192.168.1.105/24/eth0:0  nginx
 
-vim ha.cf
+vim /etc/ha.d/ha.cf
 debugfile /var/log/ha-debug  --排障log
 logfile /var/log/ha-log
 logfacility     local0
 keepalive 2  --探测2s
 deadtime 30  --30s 死掉
 warntime 10  --10s 警告 写入logfile
-initdead 60  
+initdead 60  --防止对方服务器在重启
 udpport 694   --心跳线端口
-ucast eth0 192.168.1.105  --对方ip
+ucast eth0 192.168.1.102  --对方ip  最好使用别的网卡
 auto_failback on  --主复活后主动切换回去
-node    ken3
-node    kathy
-ping 192.168.1.105  --仲裁者
+node    master
+node    slave
+ping 192.168.1.105  --仲裁者 路由器，交换机等
 respawn hacluster /usr/lib/heartbeat/ipfail --检测网络连通性
 
 
+将三个配置文件复制到从上；
+从上：
+vim /etc/ha.d/ha.cf
+ucast eth0 192.168.1.104  --对方ip  最好使用别的网卡
+
+至此配置完成；
