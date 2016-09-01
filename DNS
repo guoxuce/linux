@@ -1,0 +1,79 @@
+DNS domain name server  域名解析服务器
+
+/etc/hosts
+
+example.soft.com.
+最后是根域名，（全世界13台）
+从右向左解析
+
+配置服务器：
+yum install -y bind
+
+配置文件/etc/named.conf
+
+/var/named/下
+
+测试：
+vim /etc/named.conf
+添加：
+zone "123.com" IN {
+        type master;
+        file "123.com.zone";
+};
+
+vim /var/named/123.com.zone
+$TTL 1D
+@       IN SOA  @ admin.123.com. (
+                                        2015090101       ; serial
+                                        1D      ; refresh
+                                        1H      ; retry
+                                        1W      ; expire
+                                        3H )    ; minimum
+        IN      NS      ns.123.com.
+ns      IN      A       192.168.1.104
+        IN      MX 5    mail.123.com.
+mail    IN      A       192.168.1.102
+www     IN      A       11.111.11.11
+bbs     IN CNAME        www
+
+vim /etc/named.conf
+修改：
+listen-on port 53 { 127.0.0.1; };
+为：
+listen-on port 53 { 127.0.0.1;192.168.1.104; };
+
+检查
+ named-checkzone "123.com" /var/named/123.com.zone
+
+重启
+/etc/named.conf restart
+
+测试
+dig @192.168.1.104 mail.123.com
+
+
+反解析
+vim /etc/named.conf
+添加：
+zone "1.168.192.in-addr.arpa" IN {
+        type master;
+        file "1.168.192.zone";
+};
+
+vim /var/named/1.168.192.zone
+$TTL 1D
+@       IN SOA  @ admin.123.com. (
+                                        2015090101       ; serial
+                                        1D      ; refresh
+                                        1H      ; retry
+                                        1W      ; expire
+                                        3H )    ; minimum
+        IN      NS      ns.123.com.
+104     IN      PTR     ns.123.com
+20      IN      PTR     mail.123.com.
+
+重启服务
+/etc/init.d/named restart
+
+dig @192.168.1.104 -x 192.168.1.104
+
