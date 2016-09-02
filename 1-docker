@@ -19,16 +19,120 @@ github维护
 最大的公开仓库Docker hub  hub.docker.com
 国内公开仓库dockerpool.com
 
+注意：
+在容器中查看内核版本，显示的是宿主机的版本
 
 
-安装：
+
 centos6：
+安装：
 yum install -y epel-release
 yum install -y docker-io
-
-centos7:
-yum install -y docker
-
 启动 
 /etc/init.d/docker start
+
+centos7:
+安装：
+yum install -y docker
+启动：
+systemctl start docker
+
+
+镜像管理
+docker images：列出本地所有镜像
+docker search <IMAGE_ID/NAME>：查找image
+docker tag centos centos1 为centos镜像设置标签为centos1，会有两行
+docker pull <IMAGE_ID>：下载image
+docker push <IMAGE_ID>：上传image
+docker rmi <IMAGE_ID>：删除image
+
+容器管理
+docker ps -a
+docker start <CONTAINER_ID>：重新启动container
+docker exec -it <CONTAINER> <COMMAND>：在容器里执行命令，并输出结果
+docker commit -m "comment" -a "author" <CONTAINER_ID>  ouruser/imagename:tag
+
+cat centos.tar.gz | docker import - centos-6-x86(镜像的name)
+docker save -o centos_with_net.tar container_id/name 导出为模板（当前目录）
+docker load < centos_with_net_name.tar (导入后没有名字)(使用tag改名)
+docker load -i/--input centos_with_net_name.tar
+docker push image_name 上传到dockerhub官网
+
+
+
+容器管理
+docker create -it imagename
+docker run -i -t <IMAGE_ID> /bin/bash：-i：标准输入给容器    -t：分配一个虚拟终端    /bin/bash：执行bash脚本
+-d：以守护进程方式运行（后台）
+-P：默认匹配docker容器的5000端口号到宿主机的49153 to 65535端口
+-p <HOT_PORT>:<CONTAINER_PORT>：指定端口号
+--name： 指定容器的名称
+--rm：退出时删除容器
+
+docker start <CONTAINER_ID>：重新启动container
+docker exec -it container_id /bin/bash 进入开启的容器
+docker stop <CONTAINER_ID>：停止container
+
+docker export container_id > xuce_centos.tar 容器生成镜像
+
+docker ps - Lists containers.
+-l：显示最后启动的容器
+-a：同时显示停止的容器，默认只显示启动状态
+
+docker attach <CONTAINER_ID> 连接到启动的容器,一旦退出，容器也停止
+docker logs <CONTAINER_ID>  : 输出容器日志
+-f：实时输出
+docker cp <CONTAINER_ID>:path hostpath：复制容器内的文件到宿主机目录上
+docker rm <CONTAINER_ID>：删除container（删除正在运行的加上-f）
+docker rm `docker ps -a -q`：删除所有容器
+docker kill `docker ps -q`
+docker rmi `docker images -q -a`
+docker wait <CONTAINER_ID>：阻塞对容器的其他调用方法，直到容器停止后退出
+
+docker top <CONTAINER_ID>：查看容器中运行的进程
+docker diff <CONTAINER_ID>：查看容器中的变化
+docker inspect <CONTAINER_ID>：查看容器详细信息（输出为Json）
+-f：查找特定信息，如docker inspect -f '{{ .NetworkSettings.IPAddress }}'
+
+
+
+
+网络管理
+docker run -P：随机分配端口号
+docker run -p 5000:5000：绑定特定端口号（主机的所有网络接口的5000端口均绑定容器的5000端口）
+docker run -p 127.0.0.1:5000:5000：绑定主机的特定接口的端口号
+docker run -d -p 127.0.0.1:5000:5000/udp training/webapp python app.py：绑定udp端口号
+docker port <CONTAINER_ID> 5000：查看容器的5000端口对应本地机器的IP和端口号
+使用Docker Linking连接容器：
+Docker为源容器和接收容器创建一个安全的通道，容器之间不需要暴露端口，接收的容器可以访问源容器的数据
+docker run -d -P --name <CONTAINER_NAME> --link <CONTAINER_NAME_TO_LINK>:<ALIAS>  
+
+数据管理
+Data Volumes：volume是在一个或多个容器里指定的特殊目录
+数据卷可以在容器间共享和重复使用
+可以直接修改容器卷的数据
+容器卷里的数据不会被包含到镜像中
+容器卷保持到没有容器再使用它
+可以在容器启动的时候添加-v参数指定容器卷，也可以在Dockerfile里用VOLUMN命令添加
+docker run -d -P --name web -v /webapp training/webapp python app.py
+也可以将容器卷挂载到宿主机目录或宿主机的文件上，<容器目录或文件>的内容会被替换为<宿主机目录或文件>的内容，
+默认容器对这个目录有可读写权限
+docker run -d -P --name web -v <宿主机目录>:<容器目录> training/webapp python app.py
+可以通过指定ro，将权限改为只读
+docker run -d -P --name web -v <宿主机目录>:<容器目录>:ro training/webapp python app.py
+在一个容器创建容器卷后，其他容器便可以通过--volumes-from共享这个容器卷数据，如下：
+docker run -d -v /dbdata --name db1 training/postgres echo Data-only container for postgres
+首先启动了一个容器，并为这个容器增加一个数据卷/dbdata，然后启动另一个容器，共享这个数据卷
+docker run -d --volumes-from db1 --name db2 training/postgres
+此时db2使用了db1的容器卷，当容器db1被删除时，容器卷也不会被删除，只有所有容器不再使用此容器卷时，才会被删除
+docker rm -v：删除容器卷
+除了共享数据外，容器卷另一个作用是用来备份、恢复和迁移数据
+docker run --volumes-from db1 -v /home/backup:/backup ubuntu tar cvf /backup/backup.tar /dbdata
+启动一个容器数据卷使用db1容器的数据卷，同时新建立一个数据卷指向宿主机目录/home/backup，将/dbdata目录的数据压缩为/backup/backup.tar
+docker run -v /dbdata --name dbdata2 ubuntu /bin/bash
+docker run --volumes-from dbdata2 -v /home/backup:/backup busybox tar xvf /backup/backup.tar
+启动一个容器，同时把backup.tar的内容解压到容器的backup
+
+仓库管理
+docker login：登录
 
