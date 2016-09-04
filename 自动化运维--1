@@ -1,0 +1,3 @@
+puppet rubby开发，c/s架构，支持多平台，可管理配置文件，用户，cron任务，软件包，系统服务等，分为社区版和企业版，企业版支持图形化界面
+saltstack Python开发，c/s架构，支持多平台，比puppet轻量，远程执行命令时非常快捷，配置和使用比puppet容易，能实现puppet几乎所有的功能。
+ansible 不需要客户端安装agent，基于Python开发，可以实现批量操作系统配置，批量程序的部署，批量运行命令。（使用sshd通信）
