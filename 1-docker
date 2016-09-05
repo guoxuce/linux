@@ -48,28 +48,41 @@ systemctl start docker
 
 镜像管理
 docker images：列出本地所有镜像
-docker search <IMAGE_ID/NAME>：查找image
-docker tag centos centos1 为centos镜像设置标签为centos1，会有两行
-docker pull <IMAGE_ID>：下载image
-docker push <IMAGE_ID>：上传image
-docker rmi <IMAGE_ID>：删除image
 
-容器管理
-docker ps -a
-docker start <CONTAINER_ID>：重新启动container
-docker exec -it <CONTAINER> <COMMAND>：在容器里执行命令，并输出结果
+docker search <IMAGE_ID/NAME>：查找image
+
+docker tag centos centos1:new_centos 为centos镜像设置名字为centos1，标签为new_centos,会有两行
+
+docker pull <IMAGE_ID>：下载image
+
+docker push <IMAGE_ID>：上传image
+
+docker rmi <IMAGE_ID>：删除image
+docker rmi `docker images -q -a`
+
+使用镜像开启容器 docker run -it IMAGE /bin/bash
+
+使用容器生成镜像 dockek commit -m 'centos_with_net' -a 'xuce' CONTAINER_ID centos_net
 docker commit -m "comment" -a "author" <CONTAINER_ID>  ouruser/imagename:tag
 
+使用本地模板生成镜像 cat centos.tar | docker import - image_name (本地模板从openvz上下载)
 cat centos.tar.gz | docker import - centos-6-x86(镜像的name)
-docker save -o centos_with_net.tar container_id/name 导出为模板（当前目录）
-docker load < centos_with_net_name.tar (导入后没有名字)(使用tag改名)
-docker load -i/--input centos_with_net_name.tar
-docker push image_name 上传到dockerhub官网
 
+将镜像导出为文件 docker save -o centos.tar IMAGE
+docker save -o centos_with_net.tar container_id/name 导出为模板（当前目录）
+
+将镜像导出的文件重新加载为镜像 docker load -i (--input) centos.tar
+                                docker load < centos.tar
+docker load -i/--input centos_with_net_name.tar
+docker load < centos_with_net_name.tar (导入后没有名字)(使用tag改名)
+
+docker push image_name 上传到dockerhub官网
 
 
 容器管理
 docker create -it imagename
+docker start <CONTAINER_ID>：重新启动container
+
 docker run -i -t <IMAGE_ID> /bin/bash：-i：标准输入给容器    -t：分配一个虚拟终端    /bin/bash：执行bash脚本
 -d：以守护进程方式运行（后台）
 -P：默认匹配docker容器的5000端口号到宿主机的49153 to 65535端口
@@ -77,30 +90,75 @@ docker run -i -t <IMAGE_ID> /bin/bash：-i：标准输入给容器    -t：分�
 --name： 指定容器的名称
 --rm：退出时删除容器
 
-docker start <CONTAINER_ID>：重新启动container
+docker exec -it <CONTAINER> <COMMAND>：在容器里执行命令，并输出结果
 docker exec -it container_id /bin/bash 进入开启的容器
-docker stop <CONTAINER_ID>：停止container
 
-docker export container_id > xuce_centos.tar 容器生成镜像
+docker attach <CONTAINER_ID> 连接到启动的容器,一旦退出，容器也停止
+
+docker stop <CONTAINER_ID>：停止container
 
 docker ps - Lists containers.
 -l：显示最后启动的容器
 -a：同时显示停止的容器，默认只显示启动状态
+docker ps -a
 
-docker attach <CONTAINER_ID> 连接到启动的容器,一旦退出，容器也停止
-docker logs <CONTAINER_ID>  : 输出容器日志
+docker logs <CONTAINER_ID>  : 输出容器日志（正在运行的才可以）
 -f：实时输出
-docker cp <CONTAINER_ID>:path hostpath：复制容器内的文件到宿主机目录上
+
 docker rm <CONTAINER_ID>：删除container（删除正在运行的加上-f）
 docker rm `docker ps -a -q`：删除所有容器
+
+
+docker export container_id > xuce_centos.tar 将容器导出为文件，实现容器的迁移
+
+cat centos.tar | docker import - centos-6-x86(镜像的name) 将容器导出的文件恢复到镜像
+
+
+
+docker cp <CONTAINER_ID>:path hostpath：复制容器内的文件到宿主机目录上
+
 docker kill `docker ps -q`
-docker rmi `docker images -q -a`
+
 docker wait <CONTAINER_ID>：阻塞对容器的其他调用方法，直到容器停止后退出
 
 docker top <CONTAINER_ID>：查看容器中运行的进程
 docker diff <CONTAINER_ID>：查看容器中的变化
 docker inspect <CONTAINER_ID>：查看容器详细信息（输出为Json）
 -f：查找特定信息，如docker inspect -f '{{ .NetworkSettings.IPAddress }}'
+
+
+
+仓库管理
+docker pull registry 下载registry镜像，可以用来创建本地的docker私有仓库
+
+docker run -d -p 5000:5000 registry 开启容器，监听5000端口 -p端口映射
+telnet 127.0.0.1 5000
+curl 127.0.0.1:5000
+
+docker tag busybox 192.168.153.129:5000/busybox5000 给镜像打上tag才能上传到本地仓库
+报错：
+Error response from daemon: invalid registry endpoint https://192.168.153.129:5000/v0/: unable to ping registry endpoint https://192.168.153.129:5000/v0/
+v2 ping attempt failed with error: Get https://192.168.153.129:5000/v2/: tls: oversized record received with length 20527
+ v1 ping attempt failed with error: Get https://192.168.153.129:5000/v1/_ping: tls: oversized record received with length 20527. 
+ If this private registry supports only HTTP or HTTPS with an unknown CA certificate, please add `--insecure-registry
+ 192.168.153.129:5000` to the daemon's arguments. In the case of HTTPS, if you have access to the registry's CA certificate,
+ no need for the flag; simply place the CA certificate at /etc/docker/certs.d/192.168.153.129:5000/ca.crt
+
+vim /etc/init.d/docker
+修改
+ $exec -d $other_args &>> $logfile &
+ 为
+  $exec -d --insecure-registry 192.168.153.129:5000 $other_args &>> $logfile &
+重启
+/etc/init.d/docker restart
+开启容器 registry
+再上传 docker push 192.168.153.129:5000/busybox5000
+
+查看本地仓库有哪些镜像 curl http://192.168.153.129:5000/v1/search
+
+
+
+docker login：登录
 
 
 
@@ -141,6 +199,5 @@ docker run -v /dbdata --name dbdata2 ubuntu /bin/bash
 docker run --volumes-from dbdata2 -v /home/backup:/backup busybox tar xvf /backup/backup.tar
 启动一个容器，同时把backup.tar的内容解压到容器的backup
 
-仓库管理
-docker login：登录
+
 
