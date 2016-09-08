@@ -1,4 +1,7 @@
 DNS domain name server  域名解析服务器
+同时占用tcp和udp的53端口
+域名解析使用的是udp协议，
+而辅域名服务器向主域名服务器进行查询，如有数据变动，将进行数据同步，使用的是tcp协议
 
 /etc/hosts
 
