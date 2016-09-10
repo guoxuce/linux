@@ -137,7 +137,8 @@ curl 127.0.0.1:5000
 
 docker tag busybox 192.168.153.129:5000/busybox5000 给镜像打上tag才能上传到本地仓库
 报错：
-Error response from daemon: invalid registry endpoint https://192.168.153.129:5000/v0/: unable to ping registry endpoint https://192.168.153.129:5000/v0/
+Error response from daemon: invalid registry endpoint https://192.168.153.129:5000/v0/: unable to ping registry 
+endpoint https://192.168.153.129:5000/v0/
 v2 ping attempt failed with error: Get https://192.168.153.129:5000/v2/: tls: oversized record received with length 20527
  v1 ping attempt failed with error: Get https://192.168.153.129:5000/v1/_ping: tls: oversized record received with length 20527. 
  If this private registry supports only HTTP or HTTPS with an unknown CA certificate, please add `--insecure-registry
@@ -155,6 +156,70 @@ vim /etc/init.d/docker
 再上传 docker push 192.168.153.129:5000/busybox5000
 
 查看本地仓库有哪些镜像 curl http://192.168.153.129:5000/v1/search
+
+
+数据管理：
+1.挂载本地目录到容器里，将数据保存在本地目录
+docker run -itd -v /data/:/data1 aming bash 
+//-v 用来指定挂载目录，   ：前面的/data/为本地目录，后面的/data1为容器里的目录
+2.挂载数据卷,创建新容器的时候，使用旧的数据卷。
+docker run -itd --volumes-from loving_kowa xuce/centos bash
+3.定义数据卷容器
+类似NFS，搭建一个专门的数据卷容器，其他容器直接挂载该数据卷，
+首先建立数据卷容器，
+docker run -itd -v /data/ --name testvol xuce/centos bash
+//注意这里的/data/ 是容器的/data目录，并非本地的/data/目录，
+然后让其他容器挂载该数据卷
+docker run -itd --volumes-from testvol xuce bash
+
+数据卷的备份和恢复
+备份：首先使用testvol数据卷新开一个容器，同时把本地的/vol_data_backup目录挂载到该容器下的
+/backup目录下，这样就可以在本地的/vol_data_backup目录里查看新容器的/backup目录里的文件，
+然后再把/data目录下的文件打包成data.tar放到/backup目录下，在本地就得到了备份
+mkdir /vol_data_backup
+docker run --volumes-from testvol -v /vol_data_backup:/backup aming/centos tar cvf /backup/data.tar /data/
+恢复
+先新建一个数据卷容器，再建一个新的容器，并挂载该数据卷容器，然后再把tar包解包。
+新建数据卷容器：docker run -itd -v /data/ --name testvol2 aming/centos bash
+挂载数据卷新建容器，并解包：docker run --volumes-from testvol2 -v /vol_data_backup/:/backup aming/centos tar xvf /backup/data.tar
+
+
+
+网络管理
+host模式：使用docker run 时使用--net=host指定，
+docker使用的网络实际上和宿主机一样，在容器内看到的网卡IP是宿主机上的IP，
+对宿主机IP的复用
+
+container模式：使用--net=container:container_id/container_name
+多个容器使用共同的网络，看到的ip是一样的
+
+none模式：使用--net=none指定
+这种模式下，不会配置任何网络
+
+bridge模式：使用--net=bridge指定
+默认模式，为每个容器分配一个独立的network namespace .
+类似VMware的nat网络模式，同一个宿主机上的所有容器会在同一个网段，相互之间可以通信
+
+
+外部访问容器
+首先使用centos镜像新建一个容器，然后再该容器中安装httpd服务，并启动
+再把该容器导出成一个新的镜像（centos-httpd）然后再使用新镜像创建容器，并指定端口映射
+docker run -itd -p 5123:80 centos-httpd bash
+//-p 可以指定端口映射，本例中将容器的80端口映射为本机的5123端口
+docker exec -ut container_id bash
+启动httpd 
+编辑页面
+在本机测试 curl 127.0.0.1:5123/1.html
+-p后面也支持ip:port:port 格式 ，如 -p 127.0.0.1:8080:80
+也可以不写本地的端口，只写ip，这样会随意分配一个端口
+-p 127.0.0.1::80
+
+
+容器互联
+使用容器别名即可
+docker run -itd -p 13306:3306 --name db centos6_with_mysql
+docker run -itd -p 18080:8080 --name web --link db:db_httpd centos_with_httpd
+env可以在web上查看db信息
 
 
 
