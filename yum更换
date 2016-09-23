@@ -1,0 +1,23 @@
+网易镜像源帮助地址：http://mirrors.163.com/.help/centos.html
+搜狐镜像源帮助地址：http://mirrors.sohu.com/help/centos.html
+ 
+第一步：下载repo文件
+ 	
+cd /etc/yum.repos.d/  //切换到配置目录
+wget http://mirrors.163.com/.help/CentOS6-Base-163.repo  //下载repo文件
+centos5.X的用这个：
+wget http://mirrors.163.com/.help/CentOS5-Base-163.repo当然也可以自己手动配置
+repo文件说明可以参阅http://unun.in/linux/16.html
+ 
+第二步：备份并替换系统的repo文件
+ 	
+mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.backup  //备份原有的repo文件
+    
+mv CentOS6-Base-163.repo CentOS-Base.repo    //将下载的文件改名
+第三步：执行yum源更新
+ 	
+yum clean all
+yum makecache   //这一步必须要有
+更新系统，这一步不是必须
+ 	
+yum update
