@@ -1,0 +1,319 @@
+ansible文档
+
+回复收藏
+ 分享 
+官方文档  http://docs.ansible.com/ansible/
+安装配置 http://sofar.blog.51cto.com/353572/1579894
+常见错误  http://afewbug.com/article/26
+
+
+特性
+(1)、no agents：不需要在被管控主机上安装任何客户端；
+(2)、no server：无服务器端，使用时直接运行命令即可；
+(3)、modules in any languages：基于模块工作，可使用任意语言开发模块；
+(4)、yaml，not code：使用yaml语言定制剧本playbook；
+(5)、ssh by default：基于SSH工作；
+(6)、strong multi-tier solution：可实现多级指挥。
+
+优点
+(1)、轻量级，无需在客户端安装agent，更新时，只需在操作机上进行一次更新即可；
+(2)、批量任务执行可以写成脚本，而且不用分发到远程就可以执行；
+(3)、使用python编写，维护更简单，ruby语法过于复杂；
+(4)、支持sudo。
+
+1. 安装
+yum install -y epel-release
+yum install -y ansible
+
+2.  配置
+(1) ssh密钥配置
+首先生成密钥对
+ssh-keygen -t rsa  直接回车即可，不用设置密钥密码
+这样会在root家目录下生成.ssh目录，这里面也会生成两个文件 id_rsa 和  id_rsa.pub 
+然后把公钥(id_rsa.pub）内容放到对方机器的/root/.ssh/authorized_keys里面，包括本机
+cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
+对方机器上要配置好 authorized_keys文件的权限
+chmod 600 /root/.ssh/authorized_keys
+还需要关闭selinux
+
+(2) ansible 配置
+vi  /etc/ansible/hosts  //增加
+[testhost]
+127.0.0.1
+172.7.15.111
+说明： testhost为主机组名字，自定义的。 下面两个ip为组内的机器ip。
+
+3. 远程执行命令
+ansible  testhost -m command -a 'w' 
+这样就可以批量执行命令了。这里的testhost 为主机组名，当然我们也可以直接写一个ip，针对某一台机器来执行命令。
+
+错误： "msg": "Aborting, target uses selinux but python bindings (libselinux-python) aren't installed!"
+解决： yum install -y libselinux-python
+
+4. 拷贝文件或者目录
+ansible testhost  -m copy -a "src=/etc/ansible dest=/tmp/ansibletest owner=root group=root mode=0644"
+注意：源目录会放到目标目录下面去。
+
+5. 远程执行一个shell脚本
+首先创建一个shell脚本
+vim  /tmp/test.sh  //加入内容
+#!/bin/bash
+echo `date` > /tmp/ansible_test.txt
+
+然后把该脚本分发到各个机器上
+ansible testhost -m copy -a "src=/tmp/test.sh dest=/tmp/test.sh mod=0755"
+
+最后是批量执行该shell脚本
+ansible testhost -m shell -a "/tmp/test.sh"
+
+shell模块，还支持远程执行命令并且带管道
+ansible testhost -m shell -a "cat /etc/passwd|wc -l "
+
+6. cron
+ansible testhost -m cron -a "name='test cron' job='/bin/touch /tmp/1212.txt'  weekday=6"
+若要删除该cron 只需要加一个字段 state=absent
+ansible testhost -m cron -a "name='test cron' job='/bin/touch /tmp/1212.txt'  weekday=6 state=absent"
+
+7. yum和service
+ansible testhost -m yum -a "name=httpd"
+ansible testhost -m service -a "name=httpd state=started enabled=yes"
+
+文档使用：
+ansible-doc -l   列出所有的模块
+ansible-doc cron  查看指定模块的文档
+
+8.playbook
+相当于把模块写入到配置文件里面
+例：
+cat  /etc/ansible/test.yml
+---
+- hosts: testhost
+  remote_user: root
+  tasks:
+    - name: test_playbook
+      shell: touch /tmp/lishiming.txt
+
+说明： 
+hosts参数指定了对哪些主机进行参作；
+user参数指定了使用什么用户登录远程主机操作；
+tasks指定了一个任务，其下面的name参数同样是对任务的描述，在执行过程中会打印出来。
+
+执行：
+ansible-playbook test.yml
+
+再来一个例子：
+vim  /etc/ansible/create_user.yml
+---
+- name: create_user
+  hosts: testhost
+  user: root
+  gather_facts: false
+  vars:
+    - user: "test"
+  tasks:
+    - name: create user
+      user: name="{{ user }}"
+
+说明： 
+name参数对该playbook实现的功能做一个概述，后面执行过程中，会打印 name变量的值 ，可以省略；
+gather_facts参数指定了在以下任务部分执行前，是否先执行setup模块获取主机相关信息，这在后面的task会使用到setup获取的信息时用到；
+vars参数，指定了变量，这里指字一个user变量，其值为test ，需要注意的是，变量值一定要用引号引住；
+user提定了调用user模块，name是user模块里的一个参数，而增加的用户名字调用了上面user变量的值。
+
+
+
+循环with_items：
+
+---
+- hosts: testhost
+  user: root
+  tasks:
+    - name: change mod for file
+      file: path=/tmp/{{ item }} mode=600 owner=root group=root
+      with_items:
+        - 1.txt
+        - 2.txt
+
+说明： with_items 就是循环的关键
+
+
+条件when：
+---
+- hosts: testhost
+  remote_user: root
+  gather_facts: True
+  tasks:
+    - name: use when
+      shell: touch /tmp/when.txt
+      when: facter_ipaddress == "172.7.15.106"
+
+
+模块handlers：
+
+执行task之后，服务器发生变化之后要执行的一些操作，比如我们修改了配置文件后，需要重启一下服务，具体示例
+
+---
+- hosts: testhost
+  remote_user: root
+  tasks:
+    - name: test copy
+    copy: src=/tmp/1.txt dest=/tmp/2.txt
+    notify: test handlers
+  handlers:
+    - name: test handlers
+      shell: echo "121212" >> /tmp/2.txt
+
+说明，只有copy模块真正执行后，才会去调用下面的handlers相关的操作。也就是说如果1.txt和2.txt内容是一样的，并不会去执行handlers里面的shell相关命令。
+这种比较适合配置文件发生更改后，重启服务的操作。
+
+
+
+9. 实际应用- 安装nginx
+
+cd  /etc/ansible
+mkdir nginx_install
+mkdir  -p nginx_install/roles/{common,delete,install}/{handlers,files,meta,tasks,templates,vars}
+
+说明：roles目录下有三个角色，common为一些准备操作，delete为删除nginx的操作，install为安装nginx的操作
+
+每个角色下面又有几个目录，handlers下面是当发生改变时要执行的操作，通常用在配置文件发生改变，重启服务。files为安装时用到的一些文件，
+meta为说明信息，说明角色依赖等信息，tasks里面是核心的配置文件，templates通常存一些配置文件，启动脚本等模板文件，vars下为定义的变量
+
+cd  nginx_install/roles
+
+vim  ./common/tasks/main.yml //内容如下
+- name: Install initializtion require software
+  yum: name={{ item }} state=installed
+  with_items:
+    - gcc
+    - zlib-devel
+    - pcre-devel
+vim  ./install/vars/main.yml
+nginx_user: www
+nginx_port: 80
+nginx_web_dir: /data/www
+nginx_version: 1.4.3
+
+ls ./install/files/
+nginx-1.4.3.tar.gz
+
+说明： 我们需要把源码包放到 files目录里面
+
+ls ./install/templates
+index.html index.php install_nginx.sh nginx nginx.conf vhost.conf
+
+说明： 需要再templates下面准备好 默认页、安装nginx的shell脚本、nginx启动脚本、nginx配置文件以及虚拟主机配置文件
+
+vim ./install/tasks/copy.yml
+  - name: Copy Nginx Software To Redhat Client
+    copy: src=nginx-{{ nginx_version }}.tar.gz dest=/tmp/nginx-{{ nginx_version }}.tar.gz owner=root group=root
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+  - name: Uncompression Nginx Software To Redhat Client
+    shell: tar zxf /tmp/nginx-{{ nginx_version }}.tar.gz -C /usr/local/
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+  - name: Copy Nginx Start Script To Redhat Client
+    template: src=nginx dest=/etc/init.d/nginx owner=root group=root mode=0755
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+  - name: Copy Nginx Config To Redhat Client
+    template: src=nginx.conf dest=/usr/local/nginx-{{ nginx_version }}/conf/ owner=root group=root mode=0644
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+  - name: Copy Nginx Vhost Config to RedHat Client
+    template: src=vhost.conf dest=/usr/local/nginx-{{ nginx_version }}/conf/vhost/ owner=root group=root mode=0644
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+
+
+说明： 首先把压缩包拷贝到/tmp/目录下，然后解压到/usr/local/下，再拷贝启动脚本到/etc/init.d/下，再拷贝nginx.conf以及vhost.conf
+
+vim ./install/tasks/install.yml
+  - name: Create Nginx User In Redhat Client
+    user: name={{ nginx_user }} state=present createhome=no shell=/sbin/nologin
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+  - name: Create Nginx Dir
+    file: dest={{ nginx_web_dir }}/{{ item }} state=directory
+    with_items:
+      - vhost
+      - logs
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+  - name: Modify Nginx Dir Permission In Redhat Client
+    file: path={{ item }} owner={{ nginx_user }} group={{ nginx_user }} mode=0755
+    with_items:
+      - "{{ nginx_web_dir }}"
+      - /usr/local/nginx-{{ nginx_version }}
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+  - name: Create Index Html To Redhat Client
+    template: src=index.html dest={{ nginx_web_dir }}/vhost/index.html owner={{ nginx_user }} group={{ nginx_user }} mode=0644
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+  - name: Install Check Script In Redhat Client
+    template: src=index.php dest={{ nginx_web_dir }}/vhost/ owner={{ nginx_user }} group={{ nginx_user }} mode=0644
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+  - name: Start Nginx Service In Redhat Client
+    service: name=nginx state=restarted
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+  - name: Add Boot Start Nginx Service In Redhat Client
+    shell: chkconfig --level 345 nginx on
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+
+vim ./install/tasks/delete.yml
+  - name: Delete Nginx compression Software In Redhat Client
+    shell: rm -rf /tmp/nginx-{{ nginx_version }}.tar.gz
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+
+vim ./install/tasks/main.yml
+- include: copy.yml
+- include: install.yml
+- include: delete.yml
+
+vim  ./delete/vars/main.yml
+nginx_user: www
+nginx_port: 80
+nginx_web_dir: /data/webroot/nginx
+nginx_version: 1.4.3
+
+vim ./delete/tasks/main.yml
+- include: delete.yml
+
+vim ./delete/tasks/delete.yml
+  - name: stop nginx service
+    shell: ps -ef|grep nginx|grep -v grep|awk '{print $2}'|xargs kill -9 >>/dev/null 2>&1
+    ignore_errors: yes
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+  - name: Delete Nginx Boot Start Script
+    shell: chkconfig --del nginx
+    ignore_errors: yes
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+  - name: Delete Nginx Dir
+    shell: rm -rf /usr/local/nginx-{{ nginx_version }}
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+  - name: Delete Nginx User
+    shell: userdel {{ nginx_user }}
+    ignore_errors: yes
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+  - name: Delete Nginx Service Start Script
+    shell: rm -rf /etc/init.d/nginx
+    when: ansible_os_family == "RedHat" and ansible_distribution_version|int >=6
+
+cd ../
+vim install.yml
+---
+- hosts: testhost
+  remote_user: root
+  gather_facts: True
+  roles:
+    - common
+    - install
+
+vim delete.yml
+---
+- hosts: testhost
+  remote_user: root
+  gather_facts: True
+  roles:
+    - delete
+
+安装nginx:  ansible-playbook  install.yml
+删除nginx: ansible-playbook  delete.yml
+
+
+下载整个样例库   
+git clone git://github.com/dl528888/ansible-examples.git
+git命令，需要yum先安装一下： yum install -y git
