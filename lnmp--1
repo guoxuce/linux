@@ -1,0 +1,139 @@
+1. MySQL安装（同LAMP里面的安装方法）
+2.  php安装
+wget  http://cn2.php.net/distributions/php-5.4.37.tar.bz2
+tar jxf php-5.4.37.tar.bz2
+useradd -s /sbin/nologin php-fpm 
+cd php-5.4.37
+./configure --prefix=/usr/local/php   --with-config-file-path=/usr/local/php/etc  --enable-fpm   
+            --with-fpm-user=php-fpm  --with-fpm-group=php-fpm   --with-mysql=/usr/local/mysql  --with-mysql-sock=/tmp/mysql.sock  
+            --with-libxml-dir  --with-gd   --with-jpeg-dir   --with-png-dir   --with-freetype-dir  --with-iconv-dir   --with-zlib-dir  
+            --with-mcrypt   --enable-soap   --enable-gd-native-ttf   --enable-ftp  --enable-mbstring  --enable-exif    --disable-ipv6 
+            --with-curl 
+make && make install 
+
+cp php.ini-production /usr/local/php/etc/php.ini 
+
+拷贝启动脚本：
+cp /usr/local/src/php-5.4.37/sapi/fpm/init.d.php-fpm /etc/init.d/php-fpm 
+mv /usr/local/php/etc/php-fpm.conf.default  /usr/local/php/etc/php-fpm.conf
+chmod 755 /etc/init.d/php-fpm 
+chkconfig --add php-fpm
+service php-fpm start 
+chkconfig php-fpm on 
+
+
+3. 安装nginx
+cd /usr/local/src/
+wget http://nginx.org/download/nginx-1.6.2.tar.gz
+tar zxvf nginx-1.6.2.tar.gz 
+cd nginx-1.6.2
+./configure   --prefix=/usr/local/nginx   --with-pcre 
+make 
+make install
+
+启动nginx：  
+/usr/local/nginx/sbin/nginx
+
+4. 编写nginx启动脚本
+vim /etc/init.d/nginx  //加入如下内容
+#!/bin/bash
+# chkconfig: - 30 21
+# description: http service.
+# Source Function Library
+. /etc/init.d/functions
+# Nginx Settings
+
+NGINX_SBIN="/usr/local/nginx/sbin/nginx"
+NGINX_CONF="/usr/local/nginx/conf/nginx.conf"
+NGINX_PID="/usr/local/nginx/logs/nginx.pid"
+RETVAL=0
+prog="Nginx"
+
+start() {
+        echo -n $"Starting $prog: "
+        mkdir -p /dev/shm/nginx_temp
+        daemon $NGINX_SBIN -c $NGINX_CONF
+        RETVAL=$?
+        echo
+        return $RETVAL
+}
+
+stop() {
+        echo -n $"Stopping $prog: "
+        killproc -p $NGINX_PID $NGINX_SBIN -TERM
+        rm -rf /dev/shm/nginx_temp
+        RETVAL=$?
+        echo
+        return $RETVAL
+}
+
+reload(){
+        echo -n $"Reloading $prog: "
+        killproc -p $NGINX_PID $NGINX_SBIN -HUP
+        RETVAL=$?
+        echo
+        return $RETVAL
+}
+
+restart(){
+        stop
+        start
+}
+
+configtest(){
+    $NGINX_SBIN -c $NGINX_CONF -t
+    return 0
+}
+
+case "$1" in
+  start)
+        start
+        ;;
+  stop)
+        stop
+        ;;
+  reload)
+        reload
+        ;;
+  restart)
+        restart
+        ;;
+  configtest)
+        configtest
+        ;;
+  *)
+        echo $"Usage: $0 {start|stop|reload|restart|configtest}"
+        RETVAL=1
+esac
+exit $RETVAL
+
+保存后，执行
+chmod a+x /etc/init.d/nginx
+chkconfig --add nginx
+chkconfig nginx on
+
+
+5. 配置解析php
+vim  /usr/local/nginx/conf/nginx.conf   //把下面的配置，前面的#删除，并更改fastcgi_param SCRIPT_FILENAME 那一行
+        location ~ \.php$ {
+            root           html;
+            fastcgi_pass   127.0.0.1:9000;
+            fastcgi_index  index.php;
+            fastcgi_param  SCRIPT_FILENAME  /usr/local/nginx/html$fastcgi_script_name;
+            include        fastcgi_params;
+        }
+重新加载 /usr/local/nginx/sbin/nginx -s  reload
+
+vim  /usr/local/nginx/html/1.php 
+增加  
+<?php
+    phpinfo();
+?>
+
+测试： curl localhost/1.php 
+
+扩展学习：
+Nginx为什么比Apache Httpd高效：原理篇 http://www.toxingwang.com/linux-unix/linux-basic/1712.html
+apache和nginx工作原理比较 http://www.server110.com/nginx/201402/6543.html
+mod_php 和 mod_fastcgi以及php-fpm的比较   http://wenku.baidu.com/link?url= ... QzFJkh_AElC4Nc-LD03
+概念了解：CGI，FastCGI，PHP-CGI与PHP-FPM  http://www.nowamagic.net/librarys/veda/detail/1319/
