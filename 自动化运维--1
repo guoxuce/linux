@@ -1,3 +1,208 @@
 puppet rubby开发，c/s架构，支持多平台，可管理配置文件，用户，cron任务，软件包，系统服务等，分为社区版和企业版，企业版支持图形化界面
 saltstack Python开发，c/s架构，支持多平台，比puppet轻量，远程执行命令时非常快捷，配置和使用比puppet容易，能实现puppet几乎所有的功能。
 ansible 不需要客户端安装agent，基于Python开发，可以实现批量操作系统配置，批量程序的部署，批量运行命令。（使用sshd通信）
+
+自动化运维工具puppet安装配置
+
+1. 准备工作
+
+两台机器：
+192.168.1.100（服务端）
+192.168.1.101 （客户端）
+两台机器关闭selinux，清空iptables规则，并保存，设置hostname
+
+100上
+hostname   master.aming.com
+编辑/etc/sysconfig/network  定义hostname
+
+101上
+hostname   client.aming.com
+编辑/etc/sysconfig/network  定义hostname
+重启服务器
+
+编辑hosts文件
+100和101全部为
+192.168.1.100  master.aming.com
+192.168.1.101   client.aming.com
+
+
+安装ntpdate，并建立自动同步时间的任务计划：
+yum install -y ntp
+cront -e   //加入
+*/10  * * * * ntpdate time.windows.com
+
+
+2.  服务端安装
+
+安装puppet 源
+rpm -ivh  http://yum.puppetlabs.com/el/6/p ... ease-6-7.noarch.rpm
+
+安装服务端程序
+yum install -y puppet-server
+启动服务
+service  puppetmaster start
+
+开机启动
+chkconfig  puppetmaster on
+
+3. 客户端安装
+
+安装puppet 源
+rpm -ivh http://yum.puppetlabs.com/el/6/p ... ease-6-7.noarch.rpm
+
+安装客户端程序
+yum install -y puppet
+
+修改配置文件
+vi /etc/puppet/puppet.conf
+在最后面添加：
+listen = true
+server = master.aming.com
+runinterval = 30   //主动更新，每隔30s
+
+然后启动puppet服务
+/etc/init.d/puppet start
+
+手动生成ssl证书
+puppet agent  --test  --server  master.aming.com
+
+
+
+4. 服务端查看，签发客户端的证书
+
+puppet cert list --all
+会看到client.aming.com 的key，正常应该会在行首有一个+，如果没有说明还没有签发
+
+签发客户端
+puppet cert --sign client.aming.com
+
+5. 测试
+
+服务端上
+vi /etc/puppet/manifests/site.pp
+加入如下内容：
+node default {
+file {
+"/tmp/123.txt": content => "test,test";
+}
+}
+
+
+客户端上
+puppet agent --test --server  master.aming.com
+这样会在客户端上生成一个 /tmp/123.txt的文件，并且内容为 testtest
+
+
+6. 配置自动签发证书
+
+服务端上删除客户端证书
+puppet cert clean client.aming.com
+
+客户端上删除ssl下的文件
+rm -rf /var/lib/puppet/ssl/*
+
+服务端更改配置文件
+vim /etc/puppet/puppet.conf在[main]下面加一行
+autosign = true
+
+
+服务端创建自动签发的配置文件
+vim /etc/puppet/autosign.conf
+加入如下内容：
+*.aming.com 
+
+重启puppetmaster服务
+/etc/init.d/puppetmaster restart
+
+客户端重启puppet服务
+/etc/init.d/puppet restart
+
+这样就能在服务端上自动签发证书了。当然不重启服务，手动连一下服务端也可以
+客户端执行：
+puppet agent --test --server  master.aming.com
+
+扩展： puppet更新方式  http://www.cnphp6.com/archives/66975
+
+
+
+7. 模块管理
+
+首先要理解几个概念，模块、类、资源。 模块是puppet的最大单元，模块里面有类，类下面有资源。 
+puppet管理的文件、用户、服务、任务计划等全部由这些单元组成。
+
+下面我们来定义一个模块：
+在服务端上做如下操作：
+mkdir /etc/puppet/modules/testm  //模块名字就是testm
+cd !$
+mkdir {files,manifests,templates}   //一个模块下需要有这三个目录，files存一些文件（可以为空），manifests存配置文件，templates存模板（可以留空）
+touch manifests/init.pp  //这个是必须的
+vi  manifests/init.pp   //内容如下
+class testm{
+file {"/tmp/2.txt":
+owner => "root",
+group => "root",
+mode => 0400,
+source => "puppet://$puppetserver/modules/testm/1.txt"
+}
+}
+
+说明：类名字也叫做testm, 类下面定义了一个资源file，文件名字叫做/tmp/2.txt ，owner，group，mode定义文件的属主、数组以及权限，
+source定义这个文件从哪里获取。 $puppetserver一会也要定义一下，这里指的是puppet server服务器上/etc/puppet/modules/testm/files/1.txt
+
+下面要继续定义一个很关键的配置文件：
+vim  /etc/puppet/manifests/site.pp   //内容如下
+$puppetserver = 'master.aming.com'
+
+node 'client.aming.com'{
+    include testm
+}
+
+
+说明：$puppetserver 定义服务端的主机名，node后面为客户端的主机名，这里面定义该客户端要加载的模块
+配置完成后，在客户端执行命令：
+puppet agent --test  --server=master.aming.com   //如果客户端上启动了puppet服务，不用执行这命令，它也会自动同步的
+上面的模块其实只是同步了一个文件而已，那么要想同步一个目录如何做？我们可以通过实现同步一个目录来做一个包发布系统。
+比如在一台机器上编译安装好了apache，那么就可以通过这样的模块把这个apache目录整个分发到其他机器上。
+
+模块配置文件如下：
+class apache{
+file {"/usr/local/apache2":
+owner => "root",
+group => "root",
+source => "puppet://$puppetserver/modules/apache/apache2",
+recurse => true,
+purge => true
+
+}
+}
+其中recurse=>true 这个参数很关键，它表示递归的意思，没有这个不能同步目录。purge参数可以保证当服务端删除某个文件，客户端可以跟着删除。
+
+远程执行命令：
+exec {"123":
+unless => "test -f /tmp/aminglinux.txt",
+path => ["/bin", "/sbin", "/usr/bin", "/usr/sbin"],
+command => "/bin/touch /tmp/aminglinux.txt"
+}
+说明：unless后面的命令作为一个条件，当条件成立时，不会执行下面的命令，如果想要条件成立时，执行下面的命令，用 onlyif。
+要注意的是，我们一定要给执行的这条命令加个条件，使用unless就可以，必须满足这个条件才能执行命令，否则这个命令会一直执行，不太妥当。
+
+
+cron资源：
+cron {"aming1":
+command => "/sbin/ntpdate time.windows.com",
+user => "root",
+minute => "*/10",
+# ensure => "absent"  //当增加了这行配置，则会把该cron删除掉
+}
+
+说明：分时日月周分别对应puppet里面的minute，hour，monthday，month，weekday
+
+
+扩展学习  http://blog.chinaunix.net/uid-20639775-id-3314583.html
+
+资源： 
+
+package  http://puppet.wikidot.com/package
+service http://puppet.wikidot.com/srv
+exec http://puppet.wikidot.com/exec
+cron http://puppet.wikidot.com/cron
