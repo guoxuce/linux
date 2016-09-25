@@ -1,0 +1,273 @@
+参考资料：  
+http://gaoce19871026.blog.163.co ... 262013012115644827/
+http://www.jb51.net/article/56448.htm
+http://www.yiibai.com/redis/redis_quick_guide.html
+http://blog.nosqlfan.com/html/3202.html
+
+官网
+http://redis.io/
+
+
+和Memcached类似，但是解决了断电后数据完全丢失的情况，也就是数据的持久性。而且支持更多value类型，除了和string外，
+还支持hash、lists（链表）、sets（集合）和sorted sets（有序集合）几种数据类型。
+
+
+redis目前提供五种数据类型
+
+string是最简单的类型，你可以理解成与Memcached一样的类型，一个key对应一个value，其上支持的操作与Memcached的操作类似。但它的功能更丰富。
+示例：
+# redis-cli set key1 "aminglinux.com"
+OK
+
+# redis-cli get key1
+"aminglinux.com"
+
+
+list是一个链表结构，主要功能是push、pop、获取一个范围的所有值等等。操作中key理解为链表的名字。使用 List 结构，
+我们可以轻松地实现最新消息排行等功能（比如新浪微博的 TimeLine ）。List 的另一个应用就是消息队列，可以利用 List 的 *PUSH 操作，
+将任务存在 List 中，然后工作线程再用 POP 操作将任务取出进行执行。Redis 还提供了操作 List 中某一段元素的 API，你可以直接查询，
+删除 List 中某一段的元素。
+示例：
+[root@172-7-15-101 ~]# redis-cli rpush mylist "aaaa bbb."
+(integer) 1
+[root@172-7-15-101 ~]# redis-cli rpush mylist "1 2 3."
+(integer) 2
+[root@172-7-15-101 ~]# redis-cli rpush mylist "aminglinux."
+(integer) 3
+[root@172-7-15-101 ~]# redis-cli lrange mylist
+(error) ERR wrong number of arguments for 'lrange' command
+[root@172-7-15-101 ~]# redis-cli lrange mylist 0 2
+1) "aaaa bbb."
+2) "1 2 3."
+3) "aminglinux."
+[root@172-7-15-101 ~]# redis-cli lrange mylist 0 1
+1) "aaaa bbb."
+2) "1 2 3."
+
+
+
+set是集合，和我们数学中的集合概念相似，对集合的操作有添加删除元素，有对多个集合求交并差等操作。操作中key理解为集合的名字。
+比如在微博应用中，可以将一个用户所有的关注人存在一个集合中，将其所有粉丝存在一个集合。
+因为 Redis 非常人性化的为集合提供了求交集、并集、差集等操作，那么就可以非常方便的实现如共同关注、共同喜好、二度好友等功能，
+对上面的所有集合操作，你还可以使用不同的命令选择将结果返回给客户端还是存集到一个新的集合中。
+[root@172-7-15-101 ~]# redis-cli sadd myset a
+(integer) 1
+[root@172-7-15-101 ~]# redis-cli sadd myset b
+(integer) 1
+[root@172-7-15-101 ~]# redis-cli sadd myset d
+(integer) 1
+[root@172-7-15-101 ~]# redis-cli smembers myset
+1) "b"
+2) "d"
+3) "a"
+
+
+sorted set是有序集合，它比set多了一个权重参数score，使得集合中的元素能够按 score 进行有序排列，比如一个存储全班同学成绩的 Sorted Sets，
+其集合 value 可以是同学的学号，而 score 就可以是其考试得分，这样在数据插入集合的时候，就已经进行了天然的排序。
+另外还可以用 Sorted Sets 来做带权重的队列，比如普通消息的 score 为1，重要消息的 score 为2，然后工作线程可以选择
+按 score 的倒序来获取工作任务。让重要的任务优先执行。
+[root@172-7-15-101 ~]# redis-cli zadd aming 12 "abc"
+(integer) 1
+[root@172-7-15-101 ~]# redis-cli zadd aming 2 "cde 123"
+(integer) 1
+[root@172-7-15-101 ~]# redis-cli zadd aming 24 "123-aaa"
+(integer) 1
+[root@172-7-15-101 ~]# redis-cli zadd aming 4 "a123a"
+(integer) 1
+[root@172-7-15-101 ~]# redis-cli zrange aming 0 -1
+1) "cde 123"
+2) "a123a"
+3) "abc"
+4) "123-aaa"
+
+倒序
+[root@172-7-15-101 ~]# redis-cli zrevrange aming 0 -1
+1) "123-aaa"
+2) "abc"
+3) "a123a"
+4) "cde 123"
+
+
+Hash数据类型，在 Memcached 中，我们经常将一些结构化的信息打包成 hashmap，在客户端序列化后存储为一个字符串的值（一般是 JSON 格式），
+比如用户的昵称、年龄、性别、积分等。这时候在需要修改其中某一项时，通常需要将字符串（JSON）取出来，然后进行反序列化，修改某一项的值，
+再序列化成字符串（JSON）存储回去。简单修改一个属性就干这么多事情，消耗必定是很大的，也不适用于一些可能并发操作的场合
+（比如两个并发的操作都需要修改积分）。而 Redis 的 Hash 结构可以使你像在数据库中 Update 一个属性一样只修改某一项属性值。
+127.0.0.1:6379> hset aminglinux domain www.aminglinux.com
+(integer) 1
+127.0.0.1:6379> hget aminglinux domain
+"www.aminglinux.com"
+127.0.0.1:6379> hset aminglinux bbs www.lishiming.net
+(integer) 1
+127.0.0.1:6379> hget aminglinux bbs
+"www.lishiming.net"
+
+127.0.0.1:6379> hgetall aminglinux
+1) "domain"
+2) "www.aminglinux.com"
+3) "bbs"
+4) "www.lishiming.net"
+
+
+存储结构和存储格式
+redis使用了两种文件格式：全量数据和增量请求。全量数据格式是把内存中的数据写入磁盘，便于下次读取文件进行加载；增量请求文件则是把内存中的数据
+序列化为操作请求，用于读取文件进行replay得到数据，序列化的操作包括SET、RPUSH、SADD、ZADD。
+
+
+redis的存储分为内存存储、磁盘存储和log文件三部分，配置文件中有三个参数对其进行配置。
+
+save seconds updates，save配置，指出在多长时间内，有多少次更新操作，就将数据同步到数据文件。这个可以多个条件配合，比如默认配置文件中的设置，
+就设置了三个条件。
+
+appendonly yes/no ，appendonly配置，指出是否在每次更新操作后进行日志记录，如果不开启，可能会在断电时导致一段时间内的数据丢失。
+因为redis本身同步数据文件是按上面的save条件来同步的，所以有的数据会在一段时间内只存在于内存中。
+
+appendfsync no/always/everysec ，appendfsync配置，no表示等操作系统进行数据缓存同步到磁盘，always表示每次更新操作后手动调用fsync()
+将数据写到磁盘，everysec表示每秒同步一次。
+
+Redis 安装
+1. 下载、安装
+wget https://codeload.github.com/antirez/redis/tar.gz/2.8.21
+mv  2.8.21  redis-2.8.21.tar.gz
+tar zxvf redis-2.8.21.tar.gz
+cd redis-2.8.21
+make
+make PREFIX=/usr/local/redis  install
+
+2. 配置
+mkdir /usr/local/redis/etc/
+vim  /usr/local/redis/etc/redis.conf  //写入如下内容
+daemonize yes
+pidfile /usr/local/redis/var/redis.pid
+port 6379
+timeout 300
+loglevel debug
+logfile /usr/local/redis/var/redis.log
+databases 16
+save 900 1
+save 300 10
+save 60 10000
+rdbcompression yes
+dbfilename dump.rdb
+dir /usr/local/redis/var/
+appendonly no
+appendfsync always
+
+下面是redis.conf的主 要配置参数的意义：
+daemonize：是否以后台daemon方式运行
+pidfile：pid文件位置
+port：监听的端口号
+timeout：请求超时时间
+loglevel：log信息级别
+logfile：log文件位置
+databases：开启数据库的数量
+save * *：保存快照的频率，第一个*表示多长时间，第三个*表示执行多少次写操作。在一定时间内执行一定数量的写操作时，自动保存快照。可设置多个条件。
+rdbcompression：是否使用压缩
+dbfilename：数据快照文件名（只是文件名，不包括目录）
+dir：数据快照的保存目录（这个是目录）
+appendonly：是否开启appendonlylog，开启的话每次写操作会记一条log，这会提高数据抗风险能力，但影响效率。
+appendfsync：appendonlylog如何同步到磁盘（三个选项，分别是每次写都强制调用fsync、每秒启用一次fsync、不调用fsync等待系统自己同步）
+
+
+mkdir /usr/local/redis/var/
+chmod 777 /usr/local/redis/var/
+启动redis的命令是：
+/usr/local/redis/bin/redis-server   /usr/local/redis/etc/redis.conf
+
+我们也可以编写一个redis启动脚本。
+vi /etc/init.d/redis   //加入如下内容：
+#!/bin/sh
+#
+# redis        init file for starting up the redis daemon
+#
+# chkconfig:   - 20 80
+# description: Starts and stops the redis daemon.
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+name="redis-server"
+basedir="/usr/local/redis"
+exec="$basedir/bin/$name"
+pidfile="$basedir/var/redis.pid"
+REDIS_CONFIG="$basedir/etc/redis.conf"
+
+[ -e /etc/sysconfig/redis ] && . /etc/sysconfig/redis
+
+lockfile=/var/lock/subsys/redis
+
+start() {
+    [ -f $REDIS_CONFIG ] || exit 6
+    [ -x $exec ] || exit 5
+    echo -n $"Starting $name: "
+    daemon --user ${REDIS_USER-redis} "$exec $REDIS_CONFIG"
+    retval=$?
+    echo
+    [ $retval -eq 0 ] && touch $lockfile
+    return $retval
+}
+
+stop() {
+    echo -n $"Stopping $name: "
+    killproc -p $pidfile $name
+    retval=$?
+    echo
+    [ $retval -eq 0 ] && rm -f $lockfile
+    return $retval
+}
+
+restart() {
+    stop
+    start
+}
+
+reload() {
+    false
+}
+
+rh_status() {
+    status -p $pidfile $name
+}
+
+rh_status_q() {
+    rh_status >/dev/null 2>&1
+}
+
+
+case "$1" in
+    start)
+        rh_status_q && exit 0
+        $1
+        ;;
+    stop)
+        rh_status_q || exit 0
+        $1
+        ;;
+    restart)
+        $1
+        ;;
+    reload)
+        rh_status_q || exit 7
+        $1
+        ;;
+    force-reload)
+        force_reload
+        ;;
+    status)
+        rh_status
+        ;;
+    condrestart|try-restart)
+        rh_status_q || exit 0
+        restart
+        ;;
+    *)
+        echo $"Usage: $0 {start|stop|status|restart|condrestart|try-restart}"
+        exit 2
+esac
+exit $?
+
+############到此结束
+因为脚本启动时以redis用户启动的，所以需要增加redis用户
+useradd -s /sbin/nologin redis
+mkdir /usr/local/redis/var
+chmod 777 /usr/local/redis/var
+chmod 755 /etc/init.d/redis
