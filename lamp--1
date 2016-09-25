@@ -1,0 +1,101 @@
+1. 安装mysql
+cd /usr/local/src/ 
+wget http://syslab.comsenz.com/downloads/linux/mysql-5.1.40-linux-i686-icc-glibc23.tar.gz
+注意：上面的地址是32位机器用的，
+如果你的机器是64位，下载这个包（http://syslab.comsenz.com/downloads/linux/mysql-5.1.40-linux-x86_64-icc-glibc23.tar.gz）安装方法是一样的。
+tar zxvf /usr/local/src/mysql-5.1.40-linux-i686-icc-glibc23.tar.gz 
+mv mysql-5.1.40-linux-i686-icc-glibc23 /usr/local/mysql 
+useradd -s /sbin/nologin mysql 
+cd /usr/local/mysql 
+mkdir -p /data/mysql 
+chown -R mysql:mysql /data/mysql 
+./scripts/mysql_install_db --user=mysql --datadir=/data/mysql 
+cp support-files/my-large.cnf /etc/my.cnf 
+cp support-files/mysql.server /etc/init.d/mysqld
+chmod 755 /etc/init.d/mysqld 
+vim /etc/init.d/mysqld   #修改datadir
+chkconfig --add mysqld 
+chkconfig mysqld on 
+service mysqld start 
+
+2. 安装apache
+wget  http://archive.apache.org/dist/httpd/httpd-2.2.27.tar.bz2
+tar jvxf httpd-2.2.27.tar.bz2  
+cd httpd-2.2.27
+./configure --prefix=/usr/local/apache2  --enable-mods-shared=most  --enable-so 
+make && make install 
+
+
+
+3.  安装php
+wget http://cn2.php.net/distributions/php-5.3.28.tar.gz
+tar zxf php-5.3.28.tar.gz 
+cd php-5.3.28 
+./configure   --prefix=/usr/local/php   --with-apxs2=/usr/local/apache2/bin/apxs   --with-config-file-path=/usr/local/php/etc 
+              --with-mysql=/usr/local/mysql   --with-libxml-dir   --with-gd   --with-jpeg-dir   --with-png-dir   --with-freetype-dir  
+              --with-iconv-dir   --with-zlib-dir   --with-bz2   --with-openssl   --with-mcrypt   --enable-soap   --enable-gd-native-ttf
+              --enable-mbstring   --enable-sockets   --enable-exif   --disable-ipv6 
+make && make install 
+
+
+4. 配置apache结合php
+vim /usr/local/apache2/conf/httpd.conf找到：
+
+    Options FollowSymLinks
+    AllowOverride None
+    Order deny,allow
+    Deny from all
+
+改为：
+
+    Options FollowSymLinks
+    AllowOverride None
+    Order deny,allow
+    Allow from all
+
+
+
+
+找到:
+AddType application/x-gzip .gz .tgz
+在该行下面添加:
+
+AddType application/x-httpd-php .php
+找到:
+
+    DirectoryIndex index.html
+
+将该行改为:
+
+    DirectoryIndex index.html index.htm index.php
+
+找到:
+#ServerName www.example.com:80
+修改为:
+ServerName localhost:80
+
+5. 测试解析php
+vim /usr/local/apache2/htdocs/1.php
+写入:
+
+<?php
+    echo "php解析正常";
+?>
+保存后，继续测试:
+
+curl localhost/1.php
+
+
+扩展学习：
+mysql5.5源码编译安装   http://www.aminglinux.com/bbs/thread-1059-1-1.html
+mysql5.6源码安装报错  http://www.aminglinux.com/bbs/thread-7743-1-1.html
+httpd-2.4版本编译安装方法  http://www.aminglinux.com/bbs/thread-7283-1-1.html
+apache启动脚本加入系统服务列表  http://www.aminglinux.com/bbs/thread-7344-1-1.html
+apache扩展模块安装  http://www.aminglinux.com/bbs/thread-848-1-1.html
+如何指定使用worker/prefork  http://www.lishiming.net/thread-944-1-1.html
+apache3种工作模式（默认2.2 为prefork， 2.4为event） http://www.cnblogs.com/fnng/archive/2012/11/20/2779977.html
+apache的动态和静态  http://www.cnblogs.com/eoiioe/archive/2008/12/23/1360476.html（2.0和2.2一样）    
+                  http://blog.sina.com.cn/s/blog_6238358c01017gdu.html
+php5.5、5.6编译安装方法 http://www.aminglinux.com/bbs/thread-7284-1-1.html
+httpd.conf详解  http://www.php100.com/html/webkaifa/apache/2009/0418/1192.html
+安装mysql时出错无法初始化缺少libstdc++.so.5  http://www.aminglinux.com/bbs/thread-6580-1-1.html
