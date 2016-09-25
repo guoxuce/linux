@@ -1,0 +1,213 @@
+1. 下载discuz！ 
+mkdir /data/www
+cd /data/www
+wget  http://download.comsenz.com/DiscuzX/3.2/Discuz_X3.2_SC_GBK.zip
+unzip Discuz_X3.2_SC_GBK.zip
+mv upload/*  .
+
+2. 配置第一个虚拟主机
+删除httpd.conf中的这行前面的警号
+#Include conf/extra/httpd-vhosts.conf
+vim /usr/local/apache2/conf/extra/httpd-vhosts.conf
+
+加入如下配置：
+
+    DocumentRoot "/data/www"
+    ServerName www.123.com
+
+
+3. 配置mysql，给Discuz！增加一个账户
+给mysql root账户设置密码，然后命令行进入mysql，创建新的库，并创建一个新的帐号对该库有所有权限：
+> create database discuz;
+> grant all on discuz.* to 'aming'@'localhost' identified by '123456aminglinux';
+> quit
+
+4. 安装Discuz！
+先绑定hosts  
+192.168.11.190  www.123.com
+浏览器输入： 
+www.123.com/install/
+根据提示，修改对应目录的权限
+cd /data/www
+chown daemon:daemon  data  uc_server/data  uc_client/data config   // 让这几个目录支持apache运行帐号可写
+
+5. 为某个虚拟主机配置用户认证
+虚拟主机配置文件中，需要加入
+
+   AllowOverride AuthConfig
+
+
+然后在虚拟主机的主目录，即DocumentRoot  目录下
+vi   /data/web/test/.htaccess
+
+加入
+AuthName "frank share web" 
+AuthType Basic 
+AuthUserFile /data/web/test/.htpasswd
+require valid-user 
+
+保存后，然后
+创建apache的验证用户
+
+htpasswd -c /data/web/test/.htpasswd  test
+#第一次创建用户要用到-c 参数 第2次添加用户，就不用-c参数
+
+如果你想修改密码，可以如下
+
+htpasswd -m .htpasswd test2
+
+重启apache，即可。
+
+到此，你已经配置完成。下面介绍另一种方式：
+##################################
+vi   http.conf
+在相应的虚拟主机配置文件段，加入
+
+            AllowOverride AuthConfig
+            AuthName "自定义的"
+            AuthType Basic
+            AuthUserFile /data/.htpasswd                # 这里的/data/.htpasswd你可以随便写一个路径或名字，没有限制
+            require valid-user
+
+
+保存后，然后
+创建apache的验证用户
+
+htpasswd -cm /data/.htpasswd  test
+
+增加第二个用户的时候，就不要加-c了，因为-c是创建的意思，如果加上会把这个文件重写。
+
+6. 配置域名跳转
+    
+        RewriteEngine on
+        RewriteCond %{HTTP_HOST} ^www.domain1.com$
+        RewriteRule ^/(.*)$ http://www.domain2.com/$1 [R=301,L]
+    
+如果是多个域名，可以这样设置：
+    
+        RewriteEngine on
+        RewriteCond %{HTTP_HOST} ^www.domain.com [OR]
+        RewriteCond %{HTTP_HOST} ^www.domain1.com$
+        RewriteRule ^/(.*)$ http://www.domain2.com/$1 [R=301,L]
+    
+或者：    
+        RewriteEngine on
+        RewriteCond %{HTTP_HOST} !^www.domain2.com$
+        RewriteRule ^/(.*)$ http://www.domain2.com/$1 [R=301,L]
+    
+
+7. 配置apache的访问日志
+
+ErrorLog "|/usr/local/apache/bin/rotatelogs -l /usr/local/apache/logs/oem.discuz.qq.com-error_%Y%m%d.log 86400"
+    SetEnvIf Request_URI ".*\.gif$" image-request
+    SetEnvIf Request_URI ".*\.jpg$" image-request
+    SetEnvIf Request_URI ".*\.png$" image-request
+    SetEnvIf Request_URI ".*\.bmp$" image-request
+    SetEnvIf Request_URI ".*\.swf$" image-request
+    SetEnvIf Request_URI ".*\.js$" image-request
+    SetEnvIf Request_URI ".*\.css$" image-request
+    CustomLog "|/usr/local/apache/bin/rotatelogs -l /usr/local/apache/logs/oem.discuz.qq.com-access_%Y%m%d.log 86400" combined env=!image-request
+
+8. 配置静态文件缓存
+
+    ExpiresActive on
+    ExpiresByType image/gif  "access plus 1 days"
+    ExpiresByType image/jpeg "access plus 24 hours"
+    ExpiresByType image/png "access plus 24 hours"
+    ExpiresByType text/css "now plus 2 hour"
+    ExpiresByType application/x-javascript "now plus 2 hours"    
+    ExpiresByType application/javascript "now plus 2 hours"
+    ExpiresByType application/x-shockwave-flash "now plus 2 hours"
+    ExpiresDefault "now plus 0 min"
+
+或者使用mod_headers模块实现
+  
+# htm,html,txt类的文件缓存一个小时  
+  
+header set cache-control "max-age=3600"  
+  
+# css, js, swf类的文件缓存一个星期  
+  
+header set cache-control "max-age=604800"  
+  
+# jpg,gif,jpeg,png,ico,flv,pdf等文件缓存一年  
+  
+header set cache-control "max-age=29030400"  
+  
+
+9. 配置防盗链
+SetEnvIfNoCase Referer "^http://.*\.yourdomin\.com" local_ref
+SetEnvIfNoCase Referer ".*\.yourdomin\.com" local_ref
+SetEnvIfNoCase Referer "^$" local_ref
+
+Order Allow,Deny 
+Allow from env=local_ref 
+
+
+10. 访问控制
+
+            Order deny,allow
+            Deny from all
+            Allow from 127.0.0.1
+
+
+针对请求的uri去限制
+    
+            Order deny,allow
+            Deny from all
+            Allow from 127.0.0.1
+    
+
+某个某陆下禁止解析php
+
+    php_admin_flag engine off             
+    
+            Order deny,allow
+            Deny from all
+    
+
+11. apache rewrite相关
+apache 限制指定user_agent  http://www.lishiming.net/thread-1033-1-1.html
+apache 限制某些目录不能访问通过rewrite实现  http://www.lishiming.net/thread-3587-1-1.html
+apache rewrite 出现死循环  http://www.lishiming.net/thread-1043-1-1.html
+
+discuz伪静态配置：
+RewriteCond %{QUERY_STRING} ^(.*)$
+RewriteRule ^/topic-(.+)\.html$ /portal.php?mod=topic&topic=$1&%1
+RewriteCond %{QUERY_STRING} ^(.*)$
+RewriteRule ^/article-([0-9]+)-([0-9]+)\.html$ /portal.php?mod=view&aid=$1&page=$2&%1
+RewriteCond %{QUERY_STRING} ^(.*)$
+RewriteRule ^/forum-(\w+)-([0-9]+)\.html$ /forum.php?mod=forumdisplay&fid=$1&page=$2&%1
+RewriteCond %{QUERY_STRING} ^(.*)$
+RewriteRule ^/thread-([0-9]+)-([0-9]+)-([0-9]+)\.html$ /forum.php?mod=viewthread&tid=$1&extra=page\%3D$3&page=$2&%1
+RewriteCond %{QUERY_STRING} ^(.*)$
+RewriteRule ^/group-([0-9]+)-([0-9]+)\.html$ /forum.php?mod=group&fid=$1&page=$2&%1
+RewriteCond %{QUERY_STRING} ^(.*)$
+RewriteRule ^/space-(username|uid)-(.+)\.html$ /home.php?mod=space&$1=$2&%1
+RewriteCond %{QUERY_STRING} ^(.*)$
+RewriteRule ^/blog-([0-9]+)-([0-9]+)\.html$ /home.php?mod=space&uid=$1&do=blog&id=$2&%1
+RewriteCond %{QUERY_STRING} ^(.*)$
+RewriteRule ^/archiver/(fid|tid)-([0-9]+)\.html$ /archiver/index.php?action=$1&value=$2&%1
+RewriteCond %{QUERY_STRING} ^(.*)$
+RewriteRule ^/([a-z]+[a-z0-9_]*)-([a-z0-9_\-]+)\.html$ /plugin.php?id=$1:$2&%1
+
+
+
+扩展学习：
+apache 日志中记录代理IP以及真实客户端IP  http://www.lishiming.net/thread-960-1-1.html
+apache只记录指定URI的日志  http://www.lishiming.net/thread-981-1-1.html
+apache日志记录客户端请求的域名  http://www.lishiming.net/thread-1037-1-1.html
+apache 日志切割问题  http://www.lishiming.net/thread-566-1-1.html
+apache的order allow deny  http://www.lishiming.net/thread-832-1-1.html
+apache 针对访问uri 限制ip  http://www.lishiming.net/thread-5365-1-1.html
+几种限制ip的方法 http://www.lishiming.net/thread-6519-1-1.html
+apache开启压缩  http://www.aminglinux.com/bbs/thread-5528-1-1.html
+apache2.2到2.4配置文件变更  http://www.aminglinux.com/bbs/thread-7292-1-1.html
+apache配置所有的虚拟主机都指向第一个   http://www.aminglinux.com/bbs/thread-491-1-1.html
+apache虚拟主机开启php的短标签   http://www.aminglinux.com/bbs/thread-5370-1-1.html
+apache options参数  http://www.aminglinux.com/bbs/thread-1051-1-1.html
+apache 禁止trace或track防止xss攻击  http://www.aminglinux.com/bbs/thread-1045-1-1.html
+apache 配置https 支持ssl  http://www.aminglinux.com/bbs/thread-1029-1-1.html
+apache的proxy代理总访问后端web的第一个虚拟主机 http://www.aminglinux.com/bbs/thread-941-1-1.html
+apache 自定义header  http://www.aminglinux.com/bbs/thread-830-1-1.html
+apache的keepalive和keepalivetimeout  http://www.aminglinux.com/bbs/thread-556-1-1.html
