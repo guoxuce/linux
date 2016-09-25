@@ -1,0 +1,341 @@
+saltstatck文档
+
+回复收藏
+ 分享 
+参考文档  http://blog.cunss.com/?p=255
+http://www.iyunv.com/forum-142-1.html
+http://www.0550go.com/automation ... k-file-recurse.html
+
+比puppet出来晚几年，基于python开发，如果你仔细对比会发现saltstack和puppet很像，随着saltstack的使用量越来越多，
+它的发展也是越来越迅猛，可以说saltstatck可以实现puppet的所有功能，它比puppet容易配置。
+
+三种工作方式：  本地， c/s, 基于ssh（不用安装agent）
+三大功能： 远程命令执行，配置管理（服务，文件，cron，用户，组），云管理
+支持系统：大多数都支持，windows上不支持安装master
+
+1. saltstack安装
+前期准备：
+准备两台机器，写hostname
+172.7.15.106  server.aming.com   
+172.7.15.111    client.aming.com
+
+server上：
+yum install -y epel-release
+yum install -y salt-master  salt-minion
+
+client上：
+yum install -y epel-release
+yum install -y salt-minion
+
+启动
+server上：
+/etc/init.d/salt-master start
+/etc/init.d/salt-minion start
+
+client上：
+vim  /etc/salt/minion   //指定server的ip
+大概是16行,修改或增加
+master: 172.7.15.106
+id: client
+说明，这个id虽然不定义也没有关系，如果不定义，那么master会以客户端的hostname来显示，一定定义了就按id定义的名字来显示了，
+这个id可以不和hostname一致，但定义了id后，也应该在/etc/hosts里面定义记录
+
+/etc/init.d/salt-minion start
+
+2. 认证
+server上：
+salt-key -a  client.aming.com 
+
+此时我们在client的 /etc/salt/pki/minion 目录下面会多出一个minion_master.pub 文件
+
+可以使用 salt-key 命令查看到已经签名的客户端
+
+salt-key  可以使用-A签名所有主机，也可以使用-d删除指定主机的key
+
+3.  远程执行
+示例1： salt '*' test.ping    这里的*表示所以已经签名的客户端，也可以指定其中一个
+示例2:  salt '*' cmd.run   'df -h'    
+
+说明1： 这里的*必须是在master上已经被接受过的客户端，可以通过salt-key查到，通常是我们已经设定的id值。关于这部分内容，它支持通配、列表以及正则。
+比如两台客户端  web10  web11， 那我们可以写成  salt 'web*'    salt 'web1[02]'  salt -L 'web10,web11'   salt -E 'web(10|11) 等形式，
+使用列表，即多个机器用逗号分隔，而且需要加-L，使用正则必须要带-E选项。 它还支持grains，加-G选项，下面会介绍到。
+
+3. 配置管理
+server上：
+vim  /etc/salt/master   //搜索找到 file_roots
+打开如下内容的注释：
+file_roots:
+  base:
+    - /srv/salt
+
+mkdir  /srv/salt
+cd /srv/salt
+vim /srv/salt/top.sls  //加入如下内容
+base:
+  '*':
+    - apache
+意思是，在所有的客户端上执行 apache模块
+
+vim  /srv/salt/apache.sls  //加入如下内容，这个就是apache模块的内容
+apache-service:
+  pkg.installed:
+    - names:
+      - httpd
+      - httpd-devel
+  service.running:
+    - name: httpd
+    - enable: True
+
+说明，该模块调用了pkg.installed 函数，下面是要安装的包的名字。service.running也是一个函数，来保证指定的服务启动，enable表示开机启动。
+执行： salt 'client.aming.com' state.highstate
+
+4. grains 
+grains是在minion启动时收集到的一些信息，比如操作系统类型、网卡ip等。 使用命令
+salt 'client.aming.com' grains.ls 列出所有的grains项目名字
+salt 'client.aming.com' grains.items 列出所有grains项目以及值
+grains的信息并不是动态的，并不会时时变更，它只是在minion启动时收集到的。
+grains可以做配置管理。
+
+自定义grains
+vim   /etc/salt/minion  
+添加或更改：
+grains:
+  role:
+    - nginx
+  env:
+    - test
+或者
+vim /etc/salt/grains
+添加：
+role: nginx
+env: test
+
+重启minion服务
+获取grains：
+salt '*' grains.item role env
+salt 'client.aming.com'  grains.get  role
+
+grains其实在远程执行命令时，很方便。我们可以按照grains的一些指标来操作。比如把所有的web服务器的grains的role设置为nginx，
+那这样我们就可以批量对nginx的服务器进行操作了：
+salt -G role:nginx cmd.run 'hostname'
+salt -G os:CentOS cmd.run 'hostname'
+
+5. pillar
+pillar和grains不一样，是在master上定义的，并且是针对minion定义的一些信息。像一些比较重要的数据（密码）可以存在pillar里，还可以定义变量等。
+
+查看指定minion的pillar值（我测试的版本为空）：
+salt 'client.aming.com' pillar.items
+
+配置自定义pillar
+vim  /etc/salt/master
+找到如下配置：
+pillar_roots:
+  base:
+    - /srv/pillar
+去掉前面的警号
+mkdir /srv/pillar
+vi /srv/pillar/test.sls  //内容如下
+conf: /etc/123.conf
+
+vi /srv/pillar/top.sls  //内容如下
+base:
+  'client.aming.com': 
+    - test
+
+重启master
+/etc/init.d/salt-master restart
+
+当更改完pillar配置文件后，我们可以通过刷新pillar配置来获取新的pillar状态：
+salt ‘*’ saltutil.refresh_pillar
+
+验证：
+salt  '*' pillar.itme test
+
+pillar同样可以用来作为salt的匹配对象。比如
+salt  -I 'conf:/etc/123.conf'  test.ping 
+
+6. 深入salt配置
+环境： base, dev(开发环境）, test（测试环境）, prod（生产环境）
+vim  /etc/salt/master
+file_roots:
+  base:
+    - /srv/salt/
+  dev:
+    - /srv/salt/dev
+  test:
+    - /srv/salt/test
+  prod:
+    - /srv/salt/prod
+
+mkdir  /srv/salt/{dev,test,prod}
+
+案例一：初始化配置
+vim /srv/salt/top.sls  //内容如下
+base:
+  '*':
+    - init.dns
+如果写成带一个点的形式，那么点前面是目录名字，后面是sls文件名字。
+mkdir  init 
+cd init
+vim dns.sls //内容
+/etc/resolve.conf:
+  file.managed:
+    - source: salt://init/files/resolv.conf  //说明 salt://为当前环境（base）的主目录（/srv/salt/）下。
+    - user: root
+    - group: root
+    - mode: 644
+mkdir /srv/salt/init/files   //在此目录下放resolv.conf作为模板文件
+
+运行： salt '*' state.highstate
+
+案例二： 自动化部署lamp环境
+
+三个模块：
+pkg 安装软件包
+file  管理配置文件
+service   服务管理
+
+思路： lamp需要安装的软件包有  httpd, php, mysql, mysql-server, php-mysql, php-pdo
+预设：我们把这个lamp的安装项目放到dev环境下
+
+cd  /srv/salt/dev/
+mkdir /srv/salt/dev/files/
+
+vim lamp.sls  //加入如下内容
+lamp-pkg-install:
+  pkg.installed:
+    - names:
+      - php
+      - mysql
+      - php-cli
+      - php-common
+      - php-mysql
+      - mysql-server
+      - php-pdo
+
+apache-service:
+  pkg.installed:
+    - name: httpd
+  file.managed:
+    - name: /etc/httpd/conf/httpd.conf
+    - source: salt://files/httpd.conf
+    - user: root
+    - group: root
+    - mode: 644
+    - require:
+      - pkg: apache-service
+  service.running:
+    - name: httpd
+    - enable: True
+    - reload: True
+    - watch:
+      - file: apache-service
+    
+mysql-service:
+  file.managed:
+    - name: /etc/my.cnf
+    - source: salt://files/my.cnf
+    - user: root
+    - group: root
+    - mode: 644
+  service.running:
+    - name: mysqld
+    - enable: True
+
+vim  /srv/salt/top.sls   //加入如下内容
+dev:
+  'client.aming.com':
+    - lamp
+
+执行： salt '*' state.highstate
+
+salt编译安装nginx  http://blog.cunss.com/?p=272
+
+7. 目录管理
+
+file_dir:
+  file.recurse:   //文件使用 file.managed
+    - name: /tmp/123
+    - source: salt://test/123 
+    - user: root
+    - group: root
+    - file_mode: 644
+    - dir_mode: 755
+    - mkdir: True
+    - include_empty: True参考  http://www.0550go.com/automation ... k-file-recurse.html  
+
+8. 远程命令管理
+cat /srv/salt/ex.sls
+cmd_test:
+  cmd.run:
+    - names:
+      - touch /tmp/111.txt
+      - mkdir /tmp/1233
+    - user: root
+
+cat /srv/salt/top.sls
+base:
+  '*':
+    - ex
+
+或者将所有的命令写道master的一个文件中，然后依次执行：
+
+cat /srv/salt/test/exe.sls
+cmd_test:
+  cmd.script:
+    - source: salt://test/1.sh
+    - user: root
+
+cat /srv/salt/test/1.sh
+#!/bin/bash
+touch /tmp/111.txt
+if [ -d /tmp/1233 ]
+then
+rm -rf /tmp/1233
+fi
+
+cat /srv/salt/top.sls
+base:
+  '*':
+    - test.exe
+
+执行命令时，可以使用条件onlyif或者unless，两者正好相反
+cmd_test:
+  cmd.run:
+    - unless: test -d /tmp/1233
+    - name: mkdir /tmp/1233
+    - user: root
+
+或者：
+cmd_test:
+  cmd.run:
+    - name: touch /tmp/111.txt
+    - onlyif: test -f /tmp/111.txt
+
+9. 任务计划
+cron_test:
+  cron.present:
+    - name: /bin/touch /tmp/111.txt
+    - user: root
+    - minute: '*'
+    - hoinur: 20
+    - daymonth: '*'
+    - month: '*'
+    - dayweek: '*'
+
+注意，*需要用单引号引起来。
+当然我们还可以使用file.managed模块来管理cron，因为系统的cron都是以配置文件的形式存在的。
+删除该cron：
+cron.absent:
+  - name: /bin/touch /tmp/111.txt
+
+两者不能共存，要想删除一个cron，那之前的present就得删除掉。
+
+10. 一些可能会用到的命令
+cp.get_file  拷贝master上的文件到客户端
+salt  '*' cp.get_file salt://test/1.txt   /tmp/123.txt
+cp.get_dir 拷贝目录
+salt '*' cp.get_dir salt://test/conf  /tmp/    
+//会自动在客户端创建conf目录，所以后面不要加conf，如果写成 /tmp/conf/  则会在/tmp/conf/目录下又创建conf
+salt-run manage.up 显示存活的minion
+salt '*' cmd.script salt://test/1.sh 命令行下执行master上的shell脚本
