@@ -1,0 +1,348 @@
+内容概要：
+
+一. nginx.conf 
+
+vim /usr/local/nginx/conf/nginx.conf //清空原来的配置，加入如下内容：
+
+user nobody nobody;
+worker_processes 2;
+error_log /usr/local/nginx/logs/nginx_error.log crit;
+pid /usr/local/nginx/logs/nginx.pid;
+worker_rlimit_nofile 51200;
+events
+{
+    use epoll;
+    worker_connections 6000;
+}
+http
+
+{
+    include mime.types;
+    default_type application/octet-stream;
+    server_names_hash_bucket_size 3526;
+    server_names_hash_max_size 4096;
+    log_format combined_realip '$remote_addr $http_x_forwarded_for [$time_local]'
+    '$host "$request_uri" $status'
+    '"$http_referer" "$http_user_agent"';
+    sendfile on;
+    tcp_nopush on;
+    keepalive_timeout 30;
+    client_header_timeout 3m;
+    client_body_timeout 3m;
+    send_timeout 3m;
+    connection_pool_size 256;
+    client_header_buffer_size 1k;
+    large_client_header_buffers 8 4k;
+    request_pool_size 4k;
+    output_buffers 4 32k;
+    postpone_output 1460;
+    client_max_body_size 10m;
+    client_body_buffer_size 256k;
+    client_body_temp_path /usr/local/nginx/client_body_temp;
+    proxy_temp_path /usr/local/nginx/proxy_temp;
+    fastcgi_temp_path /usr/local/nginx/fastcgi_temp;
+    fastcgi_intercept_errors on;
+    tcp_nodelay on;
+    gzip on;
+    gzip_min_length 1k;
+    gzip_buffers 4 8k;
+    gzip_comp_level 5;
+    gzip_http_version 1.1;
+    gzip_types text/plain application/x-javascript text/css text/htm application/xml;
+
+server
+
+{
+    listen 80;
+    server_name localhost;
+    index index.html index.htm index.php;
+    root /usr/local/nginx/html;
+
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_pass unix:/tmp/php-fcgi.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME /usr/local/nginx/html$fastcgi_script_name;
+    }
+}
+}
+
+二. php-fpm.conf
+
+vim   /usr/local/php/etc/php-fpm.conf     //把之前的内容清空，然后写入如下配置：
+
+[global] 
+pid = /usr/local/php/var/run/php-fpm.pid
+error_log = /usr/local/php/var/log/php-fpm.log 
+[www] 
+listen = /tmp/php-fcgi.sock 
+user = php-fpm 
+group = php-fpm
+listen.owner = nobody  //和后面的nginx的一致
+listen.group = nobody // 同上
+pm = dynamic 
+pm.max_children = 50 
+pm.start_servers = 20 
+pm.min_spare_servers = 5 
+pm.max_spare_servers = 35 
+pm.max_requests = 500 
+rlimit_files = 1024 
+
+配置多个pool
+[global]
+...
+...
+[domain1.com]
+...
+...
+...
+[domain2.com]
+...
+...
+...
+
+慢执行日志
+slowlog = /path/to/slow.log
+request_slowlog_timeout = 1
+
+open_basedir
+php_admin_value[open_basedir]=/data/www/:/tmp/
+
+动态、静态子进程pm = static/dynamic
+如果选择static，则由pm.max_children指定固定的子进程数。
+如果选择dynamic，则由以下参数决定：
+pm.max_children ，子进程最大数
+pm.start_servers ，启动时的进程数
+pm.min_spare_servers ，保证空闲进程数最小值，如果空闲进程小于此值，则创建新的子进程
+pm.max_spare_servers ，保证空闲进程数最大值，如果空闲进程大于此值，此进行清理
+对于专用服务器，pm可以设置为static。
+
+三. nginx高级配置
+
+1. 配置第二个虚拟主机
+可以在nginx.conf 加一行
+include  vhosts/*.conf;  
+这样，我们就可以在 /usr/local/nginx/conf/vhosts目录下创建虚拟主机配置文件了。mkdir  /usr/local/nginx/conf/vhosts
+cd !$
+vim  111.conf   // 加入
+server
+
+{
+    listen 80;
+    server_name 111.com;
+    index index.html index.htm index.php;
+    root /data/www2;
+
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_pass unix:/tmp/php-fcgi.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME /data/www2$fastcgi_script_name;
+    }
+}
+2. 验证默认虚拟主机
+listen       80 default_server;
+
+3. 用户认证
+首先需要安装apache，可以使用yum install httpd 安装
+生成密码文件，创建用户
+htpasswd -c /usr/local/nginx/conf/htpasswd  test // 添加test用户，第一次添加时需要加-c参数，第二次添加时不需要-c参数
+在nginx的配置文件中添加
+location  / {
+                      root /data/www/wwwroot/count;
+                      auth_basic              "Auth";
+                      auth_basic_user_file   /usr/local/nginx/conf/htpasswd;
+            }
+
+4. 域名重定向
+server_name  aminglinux.com  www.aminglinux.com;
+
+    if ($host != 'www.aminglinux.com' ) {
+        rewrite  ^/(.*)$  http://www.aminglinux.com/$1  permanent;
+    }
+
+5. 日志相关
+日志切割：
+编写脚本：
+vim  /usr/local/sbin/logrotate.sh  //加入
+
+#! /bin/bash
+datedir=`date +%Y%m%d`
+/bin/mkdir  /home/logs/$datedir >/dev/null 2>&1
+/bin/mv /home/logs/*.log /home/logs/$datedir
+/bin/kill -HUP `cat /var/run/nginx.pid`
+
+日志格式 
+
+log_format main '$remote_addr - $remote_user [$time_local] $request '
+                    '"$status" $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+
+
+log_format main1 '$proxy_add_x_forwarded_for - $remote_user [$time_local] ' 
+                      '"$request" $status $body_bytes_sent '
+                      '"$http_referer" "$http_user_agent"';  //此日志格式为，ip不仅记录代理的ip还记录远程客户端真实IP。
+
+
+错误日志error_log日志级别 
+
+error_log 级别分为 debug, info, notice, warn, error, crit  默认为crit, 该级别在日志名后边定义格式如下：
+error_log  /your/path/error.log crit;  
+crit 记录的日志最少，而debug记录的日志最多。如果你的nginx遇到一些问题，比如502比较频繁出现，但是看默认的error_log并没有看到有意义的信息，
+那么就可以调一下错误日志的级别，当你调成error级别时，错误日志记录的内容会更加丰富。
+
+6. 静态文件不记录日志，配置缓存
+        location ~ .*\.(gif|jpg|jpeg|png|bmp|swf)$
+        {
+                expires      30d;
+                access_log off;
+        }
+
+        location ~ .*\.(js|css)$
+        {
+                expires      12h;
+                access_log off;
+        }
+
+
+7. 防盗链
+在 nginx.conf中的server部分中添加如下代码 
+location ~* ^.+\.(gif|jpg|png|swf|flv|rar|zip|doc|pdf|gz|bz2|jpeg|bmp|xls)$ {   
+                valid_referers none blocked server_names  *.taobao.com *.baidu.com *.google.com *.google.cn *.soso.com ;  
+                // 对这些域名的网站不进行盗链。
+                if ($invalid_referer) {
+#                        return 403;
+                        rewrite ^/ http://www.example.com/nophoto.gif;
+                        }
+                }
+说明：如果前面配置中已经加了                 location ~ .*\.(gif|jpg|jpeg|png|bmp|swf)$
+                         {
+                                 expires      30d;
+                                 access_log off;
+                         }
+那么会和这一部分重复，这时候上面的生效，所以，我们需要把两者合在一起。如下：
+location ~* ^.+\.(gif|jpg|png|swf|flv|rar|zip|doc|pdf|gz|bz2|jpeg|bmp|xls)$ 
+{
+         expires 30d;  
+         valid_referers none blocked server_names  *.taobao.com *.baidu.com *.google.com *.google.cn *.soso.com ;  
+         // 对这些域名的网站不进行盗链。
+         if ($invalid_referer) {
+#               return 403;
+                  rewrite ^/ http://www.example.com/nophoto.gif;
+          }
+          access_log off;
+}
+
+8. 访问控制
+限制只让某个ip访问 
+    allow          219.232.244.234;
+    deny           all;
+
+禁止某个IP或者IP段访问站点的设置方法
+
+首先建立下面的配置文件放在nginx的conf目录下面,命名为deny.ip   
+cat  deny.ip
+deny 192.168.1.11;
+deny 192.168.1.123;
+deny 10.0.1.0/24;
+
+在nginx的配置文件nginx.conf中加入：
+include deny.ip; 
+
+重启一下nginx的服务：/usr/local/nginx/sbin/nginx  reload 就可以生效了。 
+
+deny.ip 的格式中也可以用deny all; 
+如果你想实现这样的应用，除了几个IP外，其他全部拒绝，
+那需要你在deny.ip 中这样写
+allow 1.1.1.1; 
+allow 1.1.1.2;
+deny all;
+
+有时候会根据目录来限制php解析：
+location ~ .*(diy|template|attachments|forumdata|attachment|image)/.*\.php$ 
+{
+        deny all;
+}
+
+
+使用 user_agent 控制客户端访问 
+location / 
+{
+    if ($http_user_agent ~ 'bingbot/2.0|MJ12bot/v1.4.2|Spider/3.0|YoudaoBot|Tomato|Gecko/20100315'){
+            return 403;
+    }
+}
+
+禁止恶意user_agent访问 http://www.apelearn.com/bbs/thread-8409-1-1.html
+
+9. nginx的rewrite应用
+Rewrite设置及示例 http://www.lishiming.net/thread-239-1-1.html
+nginx $document_uri 参数使用 http://www.lishiming.net/thread-993-1-1.html
+nginx的301与302如何配置 http://www.lishiming.net/thread-4840-1-1.html
+nginx rewrite不支持if 嵌套也不支持逻辑或和逻辑并  http://www.lishiming.net/thread-4842-1-1.html
+
+10. nginx 代理
+
+server {
+            listen 80;
+            server_name aaa.com;
+
+            location / {
+                proxy_pass      http://2.2.2.2/;
+                proxy_set_header Host   $host;
+                proxy_set_header X-Real-IP      $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            }
+#            access_log  /home/logs/aaa_access.log combined;
+        }
+
+如果后端的机器有多台
+
+upstream bbb
+{
+            server  1.2.3.1:80;
+            server  1.2.3.4:80;
+}
+
+server {
+        listen 80;
+        server_name bbb.com;
+
+        location / {
+                proxy_pass      http://bbb/;
+                proxy_set_header Host   $host;
+                proxy_set_header X-Real-IP      $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+#            access_log  /home/logs/bb_access.log combined;
+}
+
+代理一个服务器上所有域名 
+首先在vhosts目录下需要建立两个文件，一个是servername 列表文件，一个是虚拟主机配置文件
+两个文件内容分别为
+（1） servername
+server_name www.123.net.cn  www.alsdjfl.com   www.asdfa1.com;  //就这么简单一行，当然这个server_name 还可以继续添加的
+
+（2） 虚拟主机配置文件
+server {
+            listen 80;
+            include vhosts/servername; // 这里的文件就是上边那个servername列表文件
+            location / {
+                proxy_pass     http://1.2.1.2/;  //这里就是需要做代理的服务器ip地址了
+                proxy_set_header Host   $host;
+                proxy_set_header X-Real-IP      $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            }
+            access_log  /dev/null; 
+        }
+
+根据访问的目录来区分后端的web http://www.lishiming.net/thread-920-1-1.html
+针对请求的uri来代理 http://www.lishiming.net/thread-1049-1-1.html
+nginx的代理变态用法   http://www.apelearn.com/bbs/thread-8636-1-1.html
+
+扩展学习：
+nginx.conf 配置详解  http://www.ha97.com/5194.html
+nginx rewrite 知识汇总  http://blog.c1gstudio.com/archives/434
+nginx location 匹配优先级  http://2804976.blog.51cto.com/2794976/982870    http://blog.itpub.net/27181165/viewspace-777202/
+nginx rewrite应用  http://www.apelearn.com/bbs/thread-7334-1-1.html
