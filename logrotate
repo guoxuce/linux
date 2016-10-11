@@ -1,0 +1,142 @@
+Linux logrotate 命令教程日志分割
+转载https://www.gubo.org/linux-rotate-logs-with-logrotate-utility/
+
+Linux使用某些软件的时候会产生日志文件，而这些软件本身对日志不进行分割或者压缩处理，久而久之会导致日志文件异常巨大，影响机器性能，配置不高的VPS上尤为严重。而logrotate就是管理这些日志文件的神器，可以对单个日志文件或者某个目录下的文件按时间/大小进行切割，压缩操作；指定日志保存数量；还可以在切割之后运行自定义命令。
+
+不想读那么多？直接去 /etc/logrotate.d 下随便复制一个文件，改名，然后直接进去看一下当中的英文，改一下内容即可。
+
+logrotate 分割日志原理
+系统会按照计划的频率运行logrotate，通常是每天。在大多数的Linux发行版本上，计划每天运行的脚本位于 /etc/cron.daily/logrotate 
+
+当然，也有一些系统的文件位置不同，比如Gentoo，这个脚本是 /etc/cron.daily/logrotate.cron 
+
+如果你想让logrotate运行频率更高（比如每小时运行一次），你只需要用一个脚本来让cron运行 /etc/cron.hourly/logrotate.cron 
+
+当logrotate运行的时候，它会读取自身的配置文件来决定需要分割日志文件的路径，分割日志文件的频率及保留多少个日志存档。
+
+logrotate.conf 主配置文件
+logrotate的主要配置文件位于 /etc/logrotate.conf 
+
+这个文件包含logrotate分割日志时所使用的默认的参数。这个文件一般是被注释掉的，所以你可以粗略浏览一下看看大概的设置。文件中的数个文件会在下文中提及。
+
+注意当中的一行：
+
+include /etc/logrotate.d
+这个目录就是各软件使用logrotate分割日志文件所使用的配置文件
+
+logrotate.d 配置文件目录
+使用ls命令可以看到目录下的文件，这些文件包含着各个软件分割日志的设置：
+
+ls /etc/logrotate.d
+这个目录下的文件数量可能为零，也可能有很多个配置文件，这取决于你安装应用的数量。总体上说，你通过包管理软件安装的应用也会在这个目录下创建一个配置文件。
+
+通常情况下这个文件包括一个syslog服务的配置文件，logrotate读取这个文件来分割系统日志。这个文件包含一条各种系统日志的记录，并包含一些类似于logrotate.conf的命令
+
+注意
+Ubuntu 9.10 之前的版本中没有syslog服务的记录，在之前的发行版本中，系统日志由 /etc/cron.daily/sysklogd 里的savelog命令分割
+logrotate 应用配置文件
+举个例子，Debian 系统下 php5-fpm 会在  /etc/logrotate.d/  目录下生成一个配置文件，如下：
+
+/var/log/php5-fpm.log {
+        rotate 12
+        weekly
+        missingok
+        notifempty
+        compress
+        delaycompress
+        postrotate
+                /usr/lib/php5/php5-fpm-reopenlogs
+        endscript
+}
+当logrotate运行的时候，它会检查 /var/log/php5-fpm.log 这个文件并进行分割操作，前提是这个文件不为空。如果找不到这个文件，它不会报错，然后会运行 postrotate/endscript 块当中的命令（让php5-fpm重新打开日志文件）。
+
+这个配置文件仅仅是简单的实例， logrotate.conf 文件中的很多默认的分割命令并没有包含在这里。你可以任意配置当中的参数，比如如果你的服务器访问量大，你可能会把当中的 weekly 换成 daily ，这样就能每天分割一次日志。
+
+下一部分讲解一些日常分割日志操作中经常用到的配置参数
+
+logrotate 配置命令
+logrotate完整的命令列表，你可以通过man命令来获取
+
+man logrotate
+这个部分讲解的是当中用得比较多的命令
+
+记住，在 /etc/logrotate.d/ 目录下的应用配置文件继承所有的 /etc/logrotate.conf 默认参数
+
+日志文件
+
+通常情况下，一个或一组文件的分割操作是由之后的括号区块中的参数所决定。大多数应用的日志文件只有一个括号区块，但是可以指定多个区块，在一个配置文件里，甚至在主配置文件 /etc/logrotate.conf 里
+
+你可以为一个括号区块指定多个文件，可以是带通配符的文件名或者单独列出的多个日志文件（用空格分开）。例如，要指定  /var/foo/  目录下所有  .log  结尾的文件和  /var/bar/log.txt  , 配置如下
+
+/var/foo/*.log /var/bar/log.txt {
+        rotate 14
+        daily
+        compress
+        delaycompress
+        sharedscripts
+        postrotate
+                /usr/sbin/apachectl graceful > /dev/null
+        Endscript
+}
+分割数量
+
+ rotate 命令指定分割日志的数量，也就是保留多少个日志，当新的分割日志产生时，会删除最老的一个，例如：
+rotate 4
+这个命令就告诉logrotate每次最多保留4个已分割存档日志文件。如果已经有4个日志文件，再次进行分割操作的时候，最老的那个将会被删除
+
+分割频度
+
+你可以用如下命令指定多久分割一次指定的日志文件，可用的命令包括：
+
+daily
+weekly
+monthly
+yearly
+如果没有指定上述的参数，那日志将会在logrotate运行时被运行（除非指定有其它参数，比如 size ）
+
+如果你希望用上述之外的参数来分割日志，需要要创建一个单独的文件，例如，如果你希望每小时分割一次指定的日志文件，你可以在 /etc/cron.hourly 目录下创建一个文件，当中包含类似下列的命令
+
+/usr/sbin/logrotate /etc/logrotate.hourly.conf
+然后你就按照一般的配置文件进行配置 /etc/logrotate.hourly.conf 即可
+
+Size 文件大小
+
+你可以用size命令指定一个大小，logrotate会检查文件大小来决定是否运行分割。你要指定一个大小的单位：
+
+size 100k
+size 100M
+size 100G
+上述三行分别是100K，100M和100G。当然，100G这个单位过大，很有可能影响性能，只是为了举例方便。
+
+如果频度和大小命令同时存在，大小执行的优先级将高于频度。
+
+压缩
+
+如果你希望对日志以gzip格式进行压缩（大多数情况下是的），你可以将下列命令包含在配置文件里
+
+compress
+如果你不希望对日志文件进行压缩，那可以在应用配置文件里进行配置：
+
+nocompress
+另外一个关于压缩的命令是：
+
+delaycompress
+这个文件的作用是在下次logrotate进行分割操作时再将本次分割的日志文件进行压缩操作，请注意这个命令仅在有compress命令时起作用。
+
+分割后 – postrotate
+
+Logrotate每次分割文件后会运行 postrotate 后的命令。最通常的作用是让应用重启，以便切换到新的日志文件。
+
+postrotate
+    /usr/sbin/apachectl restart > /dev/null
+endscript
+ >/dev/null  让logrotate进行将脚本命令执行时的输出内容不保存。如果应用正常启动，你不会看到任何输出内容。
+ postrotate 告知logrotate要运行的脚本，注意命令要换行， endscript 则是脚本命令的结束提示。
+分享脚本 – Sharedscripts
+
+logrotate每分割一个日志文件就会运行一次 postrotate 里的脚本命令。如果括号区块前有有多个文件，就会运行多次。例如，如果Nginx的access日志和error日志都被分割，那 postrotate 里的脚本就会被运行两次，如果脚本命令里是重启服务器，那服务器就会被重启两次，这显然不是我们所希望的。
+
+这个时候我们就需要让logrotate在分割多个文件的时候只运行一次 postrotate 里脚本命令：
+
+sharedscripts
+这个命令的作用就是在运行 postrotate 里的脚本命令之前检查是否还有日志文件要分割，所有需要日志文件都分割完之后才会运行脚本命令。当然，如果没有日志文件需要分割， postrotate 里的脚本命令同样不会运行。
