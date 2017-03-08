@@ -1,0 +1,7 @@
+安装PHP7时，执行 sudo add-apt-repository ppa:ondrej/php 报错：
+sudo: add-apt-repository:command not found
+解决办法：
+命令：sudo apt-get install python-software-properties
+      sudo apt-get software-properties-common
+      
+      安装两个工具包即可。
