@@ -1,0 +1,75 @@
+HA高可用集群 high available
+两台服务器，一主一从，心跳线连接
+heartbeat开源软件实现
+
+
+原理：
+在要做高可用的节点上安装好实现高可用功能的程序，这些程序最核心的包括两个部分：心跳监测部分和资源管理部分；
+通过资源管理器的配置接口定义资源，并将配置文件同步到其它节点，节点之间在心跳监测层通过相互发送报文来告诉对方自己当前的状态
+如果在指定的时间内未收到对方发送的报文，那么就认为对方失效，这时会启动资源管理模块来接管运行在对方主机上的资源或者服务。
+
+
+实现高可用集群有三种方式：
+（1）、主从方式（非对称）
+这种方式组建的高可用集群通常包含2个节点和一个或多个服务器，其中一台作为主节点（active），另一台作为备份节点（standy）。
+备份节点随时都在检测主节点的健康状况，当主节点发生故障时，服务会自动切换到备份节点上以保证服务正常运行。
+这种方式下的高可用集群其中的备份节点平时不会启动服务，只有发生故障时才会有用，因此感觉比较浪费。
+ 
+（2）、对称方式
+这种方式一般包含2个节点和一个或多个服务，其中每一个节点都运行着不同的服务且相互作为备份，两个节点互相检测对方的健康状况，
+这样当其中一个节点发生故障时，该节点上的服务会自动切换到另一个节点上去。这样可以保证服务正常运行。
+ 
+（3）、多机方式
+这种集群包含多个节点和多个服务。每一个节点都可能运行和不运行服务，每台服务器都监视着几个指定的服务，
+当其中的一个节点发生故障时，会自动切换到这组服务器中的一个节点上去。
+ 
+
+
+1.安装
+安装epel扩展源
+centos6
+32位epel yum源下载地址： www.lishiming.net/data/attachment/forum/epel-release-6-8_32.noarch.rpm 
+64位下载地址： www.lishiming.net/data/attachment/forum/epel-release-6-8_64.noarch.rpm 
+
+安装heartbeat
+yum install -y heartbeat
+安装依赖：
+yum install -y libnet
+
+[root@guoxuce ~]# cd /usr/share/doc/heartbeat-3.0.4/
+[root@guoxuce heartbeat-3.0.4]# ls
+apphbd.cf  AUTHORS    COPYING       ha.cf        README
+authkeys   ChangeLog  COPYING.LGPL  haresources
+[root@guoxuce heartbeat-3.0.4]# cp authkeys  ha.cf haresources  /etc/ha.d/
+
+[root@guoxuce ha.d]# vim authkeys
+auth 3
+3 md5 Hello!
+[root@guoxuce ha.d]# chmod 600 authkeys
+
+ vim haresources
+ master  192.168.1.105/24/eth0:0  nginx
+
+vim /etc/ha.d/ha.cf
+debugfile /var/log/ha-debug  --排障log
+logfile /var/log/ha-log
+logfacility     local0
+keepalive 2  --探测2s
+deadtime 30  --30s 死掉
+warntime 10  --10s 警告 写入logfile
+initdead 60  --防止对方服务器在重启
+udpport 694   --心跳线端口
+ucast eth0 192.168.1.102  --对方ip  最好使用别的网卡
+auto_failback on  --主复活后主动切换回去
+node    master
+node    slave
+ping 192.168.1.105  --仲裁者 路由器，交换机等
+respawn hacluster /usr/lib/heartbeat/ipfail --检测网络连通性
+
+
+将三个配置文件复制到从上；
+从上：
+vim /etc/ha.d/ha.cf
+ucast eth0 192.168.1.104  --对方ip  最好使用别的网卡
+
+至此配置完成；
